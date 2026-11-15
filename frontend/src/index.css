@@ -1,0 +1,73 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+    background-color: #000000;
+    color: #ffffff;
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+}
+
+/* Custom slim dark scrollbars matching desktop streaming feel */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.22);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.38);
+}
+
+/* Equalizer animation for active playing indicator */
+@keyframes xone-eq-1 {
+  0%, 100% {
+    height: 4px;
+  }
+  50% {
+    height: 14px;
+  }
+}
+
+@keyframes xone-eq-2 {
+  0%, 100% {
+    height: 14px;
+  }
+  50% {
+    height: 5px;
+  }
+}
+
+@keyframes xone-eq-3 {
+  0%, 100% {
+    height: 8px;
+  }
+  50% {
+    height: 15px;
+  }
+}
+
+.eq-bar-1 {
+  animation: xone-eq-1 0.85s ease-in-out infinite;
+}
+
+.eq-bar-2 {
+  animation: xone-eq-2 0.72s ease-in-out infinite;
+}
+
+.eq-bar-3 {
+  animation: xone-eq-3 0.95s ease-in-out infinite;
+}
