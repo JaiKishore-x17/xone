@@ -89,7 +89,7 @@ export const TrackContextMenu: React.FC<TrackContextMenuProps> = ({
       <div
         ref={menuRef}
         style={{ left, top }}
-        className="hidden md:block fixed z-50 w-56 rounded-md bg-[#282828] border border-white/10 shadow-2xl py-1.5 text-sm text-[#EAEAEA] select-none"
+        className="hidden md:block fixed z-50 w-56 rounded-md bg-[#1E1E1E] border border-white/10 shadow-2xl py-1.5 text-sm text-[#EAEAEA] select-none"
       >
         <button
           type="button"
@@ -152,7 +152,7 @@ export const TrackContextMenu: React.FC<TrackContextMenuProps> = ({
 
           {showPlaylistsSub && (
             <div
-              className={`absolute top-0 w-52 max-h-60 overflow-y-auto rounded-md bg-[#282828] border border-white/10 shadow-2xl py-1.5 ${
+              className={`absolute top-0 w-52 max-h-60 overflow-y-auto rounded-md bg-[#1E1E1E] border border-white/10 shadow-2xl py-1.5 ${
                 left + 440 > viewportWidth ? "right-full mr-1" : "left-full ml-1"
               }`}
             >
@@ -217,7 +217,7 @@ export const TrackContextMenu: React.FC<TrackContextMenuProps> = ({
         <div
           ref={sheetRef}
           onClick={(e) => e.stopPropagation()}
-          className="w-full max-h-[82vh] overflow-y-auto rounded-t-2xl bg-[#181818] border-t border-white/10 px-4 pt-3 pb-7 shadow-2xl"
+          className="w-full max-h-[82vh] overflow-y-auto rounded-t-2xl bg-[#141414] border-t border-white/10 px-4 pt-3 pb-[calc(1.75rem+env(safe-area-inset-bottom))] shadow-2xl"
         >
           {/* Sheet Drag Handle */}
           <div className="w-10 h-1 rounded-full bg-white/25 mx-auto mb-3" />
@@ -255,7 +255,7 @@ export const TrackContextMenu: React.FC<TrackContextMenuProps> = ({
                 playNextInQueue(menu.track);
                 onClose();
               }}
-              className="w-full min-h-[48px] px-3 rounded-lg flex items-center gap-3.5 hover:bg-[#282828] active:bg-[#282828] text-left transition-colors"
+              className="w-full min-h-[48px] px-3 rounded-lg flex items-center gap-3.5 hover:bg-[#1E1E1E] active:bg-[#1E1E1E] text-left transition-colors"
             >
               <Play size={18} className="text-[#FF5E4D]" />
               <span>Play Next</span>
@@ -267,7 +267,7 @@ export const TrackContextMenu: React.FC<TrackContextMenuProps> = ({
                 addToQueue(menu.track);
                 onClose();
               }}
-              className="w-full min-h-[48px] px-3 rounded-lg flex items-center gap-3.5 hover:bg-[#282828] active:bg-[#282828] text-left transition-colors"
+              className="w-full min-h-[48px] px-3 rounded-lg flex items-center gap-3.5 hover:bg-[#1E1E1E] active:bg-[#1E1E1E] text-left transition-colors"
             >
               <ListEnd size={18} className="text-[#B3B3B3]" />
               <span>Add to Queue</span>
@@ -279,7 +279,7 @@ export const TrackContextMenu: React.FC<TrackContextMenuProps> = ({
                 void toggleLike(menu.track);
                 onClose();
               }}
-              className="w-full min-h-[48px] px-3 rounded-lg flex items-center gap-3.5 hover:bg-[#282828] active:bg-[#282828] text-left transition-colors"
+              className="w-full min-h-[48px] px-3 rounded-lg flex items-center gap-3.5 hover:bg-[#1E1E1E] active:bg-[#1E1E1E] text-left transition-colors"
             >
               <Heart
                 size={18}
@@ -297,7 +297,7 @@ export const TrackContextMenu: React.FC<TrackContextMenuProps> = ({
               <button
                 type="button"
                 onClick={() => setMobilePlaylistsOpen((v) => !v)}
-                className="w-full min-h-[48px] px-3 rounded-lg flex items-center justify-between hover:bg-[#282828] active:bg-[#282828] text-left transition-colors"
+                className="w-full min-h-[48px] px-3 rounded-lg flex items-center justify-between hover:bg-[#1E1E1E] active:bg-[#1E1E1E] text-left transition-colors"
               >
                 <span className="flex items-center gap-3.5">
                   <ListPlus size={18} className="text-[#B3B3B3]" />
@@ -318,7 +318,7 @@ export const TrackContextMenu: React.FC<TrackContextMenuProps> = ({
                       setNewPlaylistModalOpen(true);
                       onClose();
                     }}
-                    className="w-full min-h-[44px] px-3 rounded-lg flex items-center gap-2.5 text-[#FF5E4D] font-semibold hover:bg-[#282828] text-left"
+                    className="w-full min-h-[44px] px-3 rounded-lg flex items-center gap-2.5 text-[#FF5E4D] font-semibold hover:bg-[#1E1E1E] text-left"
                   >
                     <Plus size={16} />
                     <span>New Playlist</span>
@@ -336,7 +336,7 @@ export const TrackContextMenu: React.FC<TrackContextMenuProps> = ({
                           void addTrackToPlaylist(pl.id, menu.track);
                           onClose();
                         }}
-                        className="w-full min-h-[44px] px-3 rounded-lg text-left text-sm text-[#EAEAEA] hover:bg-[#282828] truncate"
+                        className="w-full min-h-[44px] px-3 rounded-lg text-left text-sm text-[#EAEAEA] hover:bg-[#1E1E1E] truncate"
                       >
                         {pl.name}
                       </button>
@@ -358,7 +358,7 @@ export const TrackContextMenu: React.FC<TrackContextMenuProps> = ({
                   }
                   onClose();
                 }}
-                className="w-full min-h-[48px] px-3 rounded-lg flex items-center gap-3.5 text-[#FF5E4D] hover:bg-[#282828] active:bg-[#282828] text-left transition-colors"
+                className="w-full min-h-[48px] px-3 rounded-lg flex items-center gap-3.5 text-[#FF5E4D] hover:bg-[#1E1E1E] active:bg-[#1E1E1E] text-left transition-colors"
               >
                 <Trash2 size={18} />
                 <span>Remove from Playlist</span>

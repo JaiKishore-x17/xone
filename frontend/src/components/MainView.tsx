@@ -72,7 +72,7 @@ export const MainView: React.FC = () => {
   // ===================== HOME VIEW =====================
   if (activeView.type === "home") {
     return (
-      <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 md:px-6 pb-32 md:pb-24 pt-4 md:pt-5 bg-gradient-to-b from-[#FF5E4D]/20 via-[#121212] to-[#121212]">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 md:px-6 pb-[calc(8rem+env(safe-area-inset-bottom))] md:pb-24 pt-4 md:pt-5 bg-gradient-to-b from-[#FF5E4D]/15 via-[#000000] to-[#000000]">
         {/* Dynamic Greeting + 6 Quick-Access Horizontal Cards */}
         <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white mb-4">
           {getTimeGreeting()}
@@ -83,7 +83,7 @@ export const MainView: React.FC = () => {
           <button
             type="button"
             onClick={() => navigate({ type: "likes" })}
-            className="group flex items-center gap-3.5 h-16 rounded-md bg-white/[0.07] hover:bg-white/[0.15] overflow-hidden text-left transition-colors pr-3"
+            className="group flex items-center gap-3.5 h-16 rounded-md bg-[#141414] hover:bg-[#1E1E1E] overflow-hidden text-left transition-colors pr-3"
           >
             <div
               className="w-16 h-16 shrink-0 flex items-center justify-center"
@@ -116,12 +116,12 @@ export const MainView: React.FC = () => {
               key={pl.id}
               type="button"
               onClick={() => navigate({ type: "playlist", playlistId: pl.id })}
-              className="group flex items-center gap-3.5 h-16 rounded-md bg-white/[0.07] hover:bg-white/[0.15] overflow-hidden text-left transition-colors pr-3"
+              className="group flex items-center gap-3.5 h-16 rounded-md bg-[#141414] hover:bg-[#1E1E1E] overflow-hidden text-left transition-colors pr-3"
             >
               <div
                 className="w-16 h-16 shrink-0 flex items-center justify-center overflow-hidden"
                 style={{
-                  background: `linear-gradient(135deg, ${pl.cover_color} 0%, #181818 100%)`,
+                  background: `linear-gradient(135deg, ${pl.cover_color} 0%, #141414 100%)`,
                 }}
               >
                 {pl.thumbnails.length > 0 ? (
@@ -145,9 +145,9 @@ export const MainView: React.FC = () => {
             <button
               type="button"
               onClick={() => setNewPlaylistModalOpen(true)}
-              className="flex items-center gap-3.5 h-16 rounded-md bg-white/[0.07] hover:bg-white/[0.15] overflow-hidden text-left transition-colors pr-3"
+              className="flex items-center gap-3.5 h-16 rounded-md bg-[#141414] hover:bg-[#1E1E1E] overflow-hidden text-left transition-colors pr-3"
             >
-              <div className="w-16 h-16 shrink-0 bg-[#282828] flex items-center justify-center text-[#FF5E4D]">
+              <div className="w-16 h-16 shrink-0 bg-[#1E1E1E] flex items-center justify-center text-[#FF5E4D]">
                 <Plus size={24} />
               </div>
               <span className="font-bold text-sm text-white truncate">
@@ -163,7 +163,7 @@ export const MainView: React.FC = () => {
   // ===================== LIBRARY VIEW (MOBILE / UNIVERSAL) =====================
   if (activeView.type === "library") {
     return (
-      <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 md:px-6 pb-32 md:pb-24 pt-5 bg-[#121212]">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 md:px-6 pb-[calc(8rem+env(safe-area-inset-bottom))] md:pb-24 pt-5 bg-[#000000]">
         <div className="flex items-center justify-between gap-3 mb-5">
           <h1 className="text-2xl font-extrabold tracking-tight text-white">
             Your Library
@@ -183,7 +183,7 @@ export const MainView: React.FC = () => {
           <button
             type="button"
             onClick={() => navigate({ type: "likes" })}
-            className="w-full min-h-[64px] flex items-center gap-3.5 p-2.5 rounded-lg bg-[#181818] hover:bg-[#282828] text-left transition-colors"
+            className="w-full min-h-[64px] flex items-center gap-3.5 p-2.5 rounded-lg bg-[#141414] hover:bg-[#1E1E1E] text-left transition-colors"
           >
             <div
               className="w-12 h-12 rounded-md shrink-0 flex items-center justify-center shadow-md"
@@ -209,9 +209,9 @@ export const MainView: React.FC = () => {
           <button
             type="button"
             onClick={() => navigate({ type: "queue" })}
-            className="w-full min-h-[64px] flex items-center gap-3.5 p-2.5 rounded-lg bg-[#181818] hover:bg-[#282828] text-left transition-colors"
+            className="w-full min-h-[64px] flex items-center gap-3.5 p-2.5 rounded-lg bg-[#141414] hover:bg-[#1E1E1E] text-left transition-colors"
           >
-            <div className="w-12 h-12 rounded-md shrink-0 bg-[#282828] flex items-center justify-center text-[#FF5E4D]">
+            <div className="w-12 h-12 rounded-md shrink-0 bg-[#1E1E1E] flex items-center justify-center text-[#FF5E4D]">
               <ListMusic size={22} />
             </div>
             <div className="min-w-0 flex-1">
@@ -226,7 +226,7 @@ export const MainView: React.FC = () => {
 
           {/* User Playlists */}
           {playlists.length === 0 ? (
-            <div className="mt-4 p-6 rounded-xl bg-[#181818] border border-white/5 text-center">
+            <div className="mt-4 p-6 rounded-xl bg-[#141414] border border-white/5 text-center">
               <p className="text-sm font-bold text-white">
                 No custom playlists yet
               </p>
@@ -238,7 +238,7 @@ export const MainView: React.FC = () => {
             playlists.map((pl) => (
               <div
                 key={pl.id}
-                className="flex items-center gap-2 p-2.5 rounded-lg bg-[#181818] hover:bg-[#282828] transition-colors"
+                className="flex items-center gap-2 p-2.5 rounded-lg bg-[#141414] hover:bg-[#1E1E1E] transition-colors"
               >
                 <button
                   type="button"
@@ -252,8 +252,8 @@ export const MainView: React.FC = () => {
                     style={{
                       background:
                         pl.thumbnails.length === 0
-                          ? `linear-gradient(135deg, ${pl.cover_color} 0%, #181818 100%)`
-                          : "#181818",
+                          ? `linear-gradient(135deg, ${pl.cover_color} 0%, #141414 100%)`
+                          : "#141414",
                     }}
                   >
                     {pl.thumbnails.length >= 4 ? (
@@ -312,10 +312,10 @@ export const MainView: React.FC = () => {
     const isTopPlaying = isTopActive && isPlaying;
 
     return (
-      <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 md:px-6 pb-32 md:pb-24 pt-5 bg-[#121212]">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 md:px-6 pb-[calc(8rem+env(safe-area-inset-bottom))] md:pb-24 pt-5 bg-[#000000]">
         {!searchQuery.trim() ? (
           <div className="max-w-2xl mx-auto mt-10 md:mt-14 text-center">
-            <div className="w-16 h-16 rounded-2xl bg-[#181818] border border-white/10 flex items-center justify-center mx-auto mb-4">
+            <div className="w-16 h-16 rounded-2xl bg-[#141414] border border-white/10 flex items-center justify-center mx-auto mb-4">
               <Search size={28} className="text-[#FF5E4D]" />
             </div>
             <h2 className="text-xl md:text-2xl font-extrabold text-white">
@@ -336,7 +336,7 @@ export const MainView: React.FC = () => {
                   key={suggestion}
                   type="button"
                   onClick={() => setSearchQuery(suggestion)}
-                  className="min-h-[44px] md:min-h-0 px-4 md:px-3.5 py-2 md:py-1.5 rounded-full bg-[#181818] hover:bg-[#282828] text-xs font-semibold text-white border border-white/10 transition-colors"
+                  className="min-h-[44px] md:min-h-0 px-4 md:px-3.5 py-2 md:py-1.5 rounded-full bg-[#141414] hover:bg-[#1E1E1E] text-xs font-semibold text-white border border-white/10 transition-colors"
                 >
                   {suggestion}
                 </button>
@@ -349,7 +349,7 @@ export const MainView: React.FC = () => {
             <p className="text-sm text-[#B3B3B3]">Searching...</p>
           </div>
         ) : searchError ? (
-          <div className="rounded-lg bg-[#181818] border border-[#FF5E4D]/30 p-6 text-center max-w-lg mx-auto mt-10">
+          <div className="rounded-lg bg-[#141414] border border-[#FF5E4D]/30 p-6 text-center max-w-lg mx-auto mt-10">
             <p className="text-sm font-bold text-[#FF5E4D]">{searchError}</p>
           </div>
         ) : songs.length === 0 && !topResult ? (
@@ -380,7 +380,7 @@ export const MainView: React.FC = () => {
                         y: e.clientY,
                       });
                     }}
-                    className="group relative p-5 rounded-lg bg-[#181818] hover:bg-[#282828] transition-colors cursor-pointer min-h-[200px] md:h-[232px] flex flex-col justify-between gap-4"
+                    className="group relative p-5 rounded-lg bg-[#141414] hover:bg-[#1E1E1E] transition-colors cursor-pointer min-h-[200px] md:h-[232px] flex flex-col justify-between gap-4"
                   >
                     <img
                       src={topResult.thumbnail}
@@ -490,10 +490,10 @@ export const MainView: React.FC = () => {
 
     return (
       <div
-        className="flex-1 overflow-y-auto overflow-x-hidden pb-32 md:pb-24"
+        className="flex-1 overflow-y-auto overflow-x-hidden pb-[calc(8rem+env(safe-area-inset-bottom))] md:pb-24"
         style={{
           background:
-            "linear-gradient(180deg, rgba(255,94,77,0.45) 0%, rgba(110,20,16,0.35) 210px, #121212 360px, #121212 100%)",
+            "linear-gradient(180deg, rgba(255,94,77,0.45) 0%, rgba(110,20,16,0.35) 210px, #000000 360px, #000000 100%)",
         }}
       >
         {/* Header (compact & centered on mobile, left-aligned row on desktop) */}
@@ -561,7 +561,7 @@ export const MainView: React.FC = () => {
         {/* Tracks Table */}
         <div className="px-2 md:px-6">
           {likedSongs.length === 0 ? (
-            <div className="mx-2 md:mx-0 rounded-xl bg-[#181818]/90 p-8 md:p-10 text-center mt-4">
+            <div className="mx-2 md:mx-0 rounded-xl bg-[#141414]/90 p-8 md:p-10 text-center mt-4">
               <Heart size={36} className="mx-auto text-[#FF5E4D] mb-3" />
               <p className="text-lg font-bold text-white">
                 Songs you like will appear here
@@ -603,7 +603,7 @@ export const MainView: React.FC = () => {
 
     if (!playlist) {
       return (
-        <div className="flex-1 flex items-center justify-center bg-[#121212]">
+        <div className="flex-1 flex items-center justify-center bg-[#000000]">
           <Loader2 size={30} className="animate-spin text-[#FF5E4D]" />
         </div>
       );
@@ -622,9 +622,9 @@ export const MainView: React.FC = () => {
 
     return (
       <div
-        className="flex-1 overflow-y-auto overflow-x-hidden pb-32 md:pb-24"
+        className="flex-1 overflow-y-auto overflow-x-hidden pb-[calc(8rem+env(safe-area-inset-bottom))] md:pb-24"
         style={{
-          background: `linear-gradient(180deg, ${accent}66 0%, ${accent}22 210px, #121212 360px, #121212 100%)`,
+          background: `linear-gradient(180deg, ${accent}66 0%, ${accent}22 210px, #000000 360px, #000000 100%)`,
         }}
       >
         {/* Dynamic Gradient Playlist Header (compact & centered on mobile) */}
@@ -634,8 +634,8 @@ export const MainView: React.FC = () => {
             style={{
               background:
                 playlist.thumbnails.length === 0
-                  ? `linear-gradient(135deg, ${accent} 0%, #181818 100%)`
-                  : "#181818",
+                  ? `linear-gradient(135deg, ${accent} 0%, #141414 100%)`
+                  : "#141414",
             }}
           >
             {playlist.thumbnails.length >= 4 ? (
@@ -720,7 +720,7 @@ export const MainView: React.FC = () => {
           <button
             type="button"
             onClick={() => void deletePlaylist(playlist.id)}
-            className="min-h-[44px] md:min-h-0 flex items-center gap-1.5 px-4 md:px-3.5 py-2 md:py-1.5 rounded-full bg-black/40 hover:bg-[#282828] text-xs font-semibold text-[#B3B3B3] hover:text-[#FF5E4D] transition-colors shrink-0"
+            className="min-h-[44px] md:min-h-0 flex items-center gap-1.5 px-4 md:px-3.5 py-2 md:py-1.5 rounded-full bg-black/40 hover:bg-[#1E1E1E] text-xs font-semibold text-[#B3B3B3] hover:text-[#FF5E4D] transition-colors shrink-0"
           >
             <Trash2 size={15} />
             <span>Delete</span>
@@ -731,7 +731,7 @@ export const MainView: React.FC = () => {
         {/* Reorderable Track List */}
         <div className="px-2 md:px-6">
           {tracks.length === 0 ? (
-            <div className="mx-2 md:mx-0 rounded-xl bg-[#181818]/90 p-8 md:p-10 text-center mt-4">
+            <div className="mx-2 md:mx-0 rounded-xl bg-[#141414]/90 p-8 md:p-10 text-center mt-4">
               <ListMusic size={36} className="mx-auto text-[#FF5E4D] mb-3" />
               <p className="text-lg font-bold text-white">
                 This playlist is currently empty
@@ -803,7 +803,7 @@ export const MainView: React.FC = () => {
   const upcoming = queueIndex >= 0 ? queue.slice(queueIndex + 1) : queue;
 
   return (
-    <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 md:px-6 pb-32 md:pb-24 pt-6 bg-[#121212]">
+    <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 md:px-6 pb-[calc(8rem+env(safe-area-inset-bottom))] md:pb-24 pt-6 bg-[#000000]">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-extrabold text-white">Queue</h1>
@@ -814,7 +814,7 @@ export const MainView: React.FC = () => {
             className={`min-h-[36px] inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border transition-colors ${
               autoplayRadio
                 ? "bg-[#FF5E4D]/15 border-[#FF5E4D] text-[#FF5E4D] hover:bg-[#FF5E4D]/25"
-                : "bg-[#181818] border-white/10 text-[#B3B3B3] hover:text-white"
+                : "bg-[#141414] border-white/10 text-[#B3B3B3] hover:text-white"
             }`}
           >
             {isFetchingRadio ? (
@@ -839,7 +839,7 @@ export const MainView: React.FC = () => {
           <button
             type="button"
             onClick={clearUpcomingQueue}
-            className="min-h-[44px] md:min-h-0 px-4 py-2 md:py-1.5 rounded-full bg-[#181818] hover:bg-[#282828] border border-white/10 text-xs font-bold text-[#B3B3B3] hover:text-white transition-colors"
+            className="min-h-[44px] md:min-h-0 px-4 py-2 md:py-1.5 rounded-full bg-[#141414] hover:bg-[#1E1E1E] border border-white/10 text-xs font-bold text-[#B3B3B3] hover:text-white transition-colors"
           >
             Clear queue
           </button>
@@ -852,7 +852,7 @@ export const MainView: React.FC = () => {
           Now playing
         </h2>
         {currentTrack ? (
-          <div className="flex items-center gap-3 md:gap-4 p-3 rounded-lg bg-[#181818] border border-[#FF5E4D]/25">
+          <div className="flex items-center gap-3 md:gap-4 p-3 rounded-lg bg-[#141414] border border-[#FF5E4D]/25">
             <img
               src={currentTrack.thumbnail}
               alt={currentTrack.title}
@@ -882,14 +882,14 @@ export const MainView: React.FC = () => {
         </h2>
         {upcoming.length === 0 ? (
           isFetchingRadio ? (
-            <div className="rounded-xl bg-[#181818] p-8 text-center">
+            <div className="rounded-xl bg-[#141414] p-8 text-center">
               <Loader2 size={28} className="mx-auto text-[#FF5E4D] animate-spin mb-2" />
               <p className="text-sm text-[#B3B3B3]">
                 Finding similar tracks for your queue...
               </p>
             </div>
           ) : (
-            <div className="rounded-xl bg-[#181818] p-8 text-center">
+            <div className="rounded-xl bg-[#141414] p-8 text-center">
               <ListMusic size={30} className="mx-auto text-[#727272] mb-2" />
               <p className="text-sm text-[#B3B3B3]">
                 Use &hellip; or right-click &rarr; Play Next / Add to Queue on any song.
@@ -907,7 +907,7 @@ export const MainView: React.FC = () => {
               return (
                 <div
                   key={`${track.video_id}-${absoluteIdx}`}
-                  className="group flex items-center gap-3 px-2 md:px-3 py-2 rounded-md hover:bg-[#282828] transition-colors"
+                  className="group flex items-center gap-3 px-2 md:px-3 py-2 rounded-md hover:bg-[#1E1E1E] transition-colors"
                 >
                   <span className="hidden md:inline-block w-6 text-center text-xs tabular-nums text-[#B3B3B3]">
                     {offset + 1}

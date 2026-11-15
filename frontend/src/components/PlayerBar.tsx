@@ -133,7 +133,7 @@ export const PlayerBar: React.FC = () => {
             if (e.key === "Enter") setIsMobileExpanded(true);
           }}
           aria-label="Open full-screen now playing controls"
-          className="fixed bottom-14 left-2 right-2 z-40 md:hidden rounded-lg bg-[#181818] border border-white/10 p-2 shadow-2xl overflow-hidden select-none cursor-pointer"
+          className="fixed bottom-[calc(3.5rem+env(safe-area-inset-bottom))] left-2 right-2 z-40 md:hidden rounded-lg bg-[#141414] border border-white/10 p-2 shadow-2xl overflow-hidden select-none cursor-pointer"
         >
           <div className="flex items-center gap-2.5">
             <div className="relative w-10 h-10 rounded overflow-hidden shrink-0 bg-black">
@@ -212,7 +212,7 @@ export const PlayerBar: React.FC = () => {
 
       {/* ===================== FULL-SCREEN MOBILE NOW PLAYING SHEET (< 768px) ===================== */}
       {isMobileExpanded && currentTrack && (
-        <div className="fixed inset-0 z-50 md:hidden bg-gradient-to-b from-[#282828] to-[#000000] flex flex-col justify-between px-6 pt-4 pb-8 overflow-y-auto select-none">
+        <div className="fixed inset-0 z-50 md:hidden bg-gradient-to-b from-[#1E1E1E] via-[#000000] to-[#000000] flex flex-col justify-between px-6 pt-[calc(1rem+env(safe-area-inset-top))] pb-[calc(2rem+env(safe-area-inset-bottom))] overflow-y-auto select-none">
           {/* Top Header */}
           <div className="flex items-center justify-between gap-2">
             <button
@@ -252,7 +252,7 @@ export const PlayerBar: React.FC = () => {
 
           {/* Large Centered Artwork */}
           <div className="my-4 flex-1 flex items-center justify-center">
-            <div className="relative w-full max-w-[320px] aspect-square rounded-xl overflow-hidden shadow-2xl bg-[#181818]">
+            <div className="relative w-full max-w-[320px] aspect-square rounded-xl overflow-hidden shadow-2xl bg-[#141414]">
               <img
                 src={currentTrack.thumbnail}
                 alt={currentTrack.title}
@@ -405,7 +405,7 @@ export const PlayerBar: React.FC = () => {
             {/* Bottom Utility Row */}
             <div className="flex items-center justify-between pt-1">
               {prefetchedVideoId ? (
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#181818] border border-[#FF5E4D]/30 text-[10px] font-bold text-[#FF5E4D] tracking-wide">
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#141414] border border-[#FF5E4D]/30 text-[10px] font-bold text-[#FF5E4D] tracking-wide">
                   NEXT READY
                 </span>
               ) : (
@@ -431,12 +431,12 @@ export const PlayerBar: React.FC = () => {
       )}
 
       {/* ===================== DESKTOP PLAYER BAR (>= 768px) ===================== */}
-      <footer className="hidden md:flex h-[90px] shrink-0 bg-black border-t border-[#181818] px-4 items-center justify-between gap-4 select-none">
+      <footer className="hidden md:flex h-[90px] shrink-0 bg-black border-t border-[#141414] px-4 items-center justify-between gap-4 select-none">
         {/* Left: Now Playing Track Info */}
         <div className="w-[30%] min-w-[200px] flex items-center gap-3.5">
           {currentTrack ? (
             <>
-              <div className="relative w-14 h-14 rounded-md overflow-hidden shrink-0 bg-[#181818] shadow-lg">
+              <div className="relative w-14 h-14 rounded-md overflow-hidden shrink-0 bg-[#141414] shadow-lg">
                 <img
                   src={currentTrack.thumbnail}
                   alt={currentTrack.title}
@@ -483,7 +483,7 @@ export const PlayerBar: React.FC = () => {
             </>
           ) : (
             <div className="flex items-center gap-3 text-[#727272]">
-              <div className="w-14 h-14 rounded-md bg-[#181818] flex items-center justify-center">
+              <div className="w-14 h-14 rounded-md bg-[#141414] flex items-center justify-center">
                 <ListMusic size={20} />
               </div>
               <div>
@@ -622,7 +622,7 @@ export const PlayerBar: React.FC = () => {
           {prefetchedVideoId && (
             <span
               title="Next track preloaded into standby Audio buffer"
-              className="hidden xl:inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#181818] border border-[#FF5E4D]/30 text-[10px] font-bold text-[#FF5E4D] tracking-wide"
+              className="hidden xl:inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#141414] border border-[#FF5E4D]/30 text-[10px] font-bold text-[#FF5E4D] tracking-wide"
             >
               NEXT READY
             </span>

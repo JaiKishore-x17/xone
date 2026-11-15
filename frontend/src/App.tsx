@@ -25,7 +25,7 @@ export const App: React.FC = () => {
       <div className="flex-1 min-h-0 flex gap-0 md:gap-2 p-0 md:p-2 md:pb-0 overflow-x-hidden">
         <Sidebar />
 
-        <main className="flex-1 min-w-0 rounded-none md:rounded-lg bg-[#121212] flex flex-col overflow-hidden relative">
+        <main className="flex-1 min-w-0 rounded-none md:rounded-lg bg-[#000000] flex flex-col overflow-hidden relative">
           <TopBar />
           <MainView />
         </main>
@@ -41,7 +41,7 @@ export const App: React.FC = () => {
       <NewPlaylistModal />
 
       {toastMessage && (
-        <div className="fixed bottom-32 md:bottom-28 left-1/2 -translate-x-1/2 z-50 px-5 py-2.5 rounded-full bg-[#FF5E4D] text-black text-xs font-bold shadow-2xl pointer-events-none whitespace-nowrap max-w-[90vw] truncate">
+        <div className="fixed bottom-[calc(8rem+env(safe-area-inset-bottom))] md:bottom-28 left-1/2 -translate-x-1/2 z-50 px-5 py-2.5 rounded-full bg-[#FF5E4D] text-black text-xs font-bold shadow-2xl pointer-events-none whitespace-nowrap max-w-[90vw] truncate">
           {toastMessage}
         </div>
       )}

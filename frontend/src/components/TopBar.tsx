@@ -63,7 +63,7 @@ export const TopBar: React.FC = () => {
   };
 
   return (
-    <header className="sticky top-0 z-30 h-16 px-3 md:px-6 flex items-center justify-between gap-2 md:gap-4 bg-[#121212]/90 backdrop-blur-md border-b border-white/[0.04]">
+    <header className="sticky top-0 z-30 h-[calc(4rem+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)] px-3 md:px-6 flex items-center justify-between gap-2 md:gap-4 bg-[#000000]/90 backdrop-blur-md border-b border-white/[0.04]">
       {/* Left: Mobile Logo + History Navigation + Instant Debounced Search */}
       <div className="flex items-center gap-2 md:gap-3 flex-1 min-w-0 max-w-2xl">
         <button
@@ -81,7 +81,7 @@ export const TopBar: React.FC = () => {
             onClick={goBack}
             disabled={historyIndex <= 0}
             aria-label="Go back"
-            className="min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0 md:w-8 md:h-8 rounded-full bg-black/70 flex items-center justify-center text-white disabled:opacity-40 disabled:cursor-not-allowed hover:bg-[#282828] transition-colors"
+            className="min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0 md:w-8 md:h-8 rounded-full bg-black/70 flex items-center justify-center text-white disabled:opacity-40 disabled:cursor-not-allowed hover:bg-[#1E1E1E] transition-colors"
           >
             <ChevronLeft size={20} />
           </button>
@@ -90,7 +90,7 @@ export const TopBar: React.FC = () => {
             onClick={goForward}
             disabled={historyIndex >= historyLength - 1}
             aria-label="Go forward"
-            className="hidden sm:flex min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0 md:w-8 md:h-8 rounded-full bg-black/70 items-center justify-center text-white disabled:opacity-40 disabled:cursor-not-allowed hover:bg-[#282828] transition-colors"
+            className="hidden sm:flex min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0 md:w-8 md:h-8 rounded-full bg-black/70 items-center justify-center text-white disabled:opacity-40 disabled:cursor-not-allowed hover:bg-[#1E1E1E] transition-colors"
           >
             <ChevronRight size={20} />
           </button>
@@ -112,7 +112,7 @@ export const TopBar: React.FC = () => {
             }}
             onChange={(e) => handleInputChange(e.target.value)}
             placeholder="What do you want to play?"
-            className="w-full h-11 md:h-10 pl-10 pr-14 md:pr-20 rounded-full bg-[#242424] hover:bg-[#2A2A2A] focus:bg-[#2A2A2A] text-sm text-white placeholder-[#A7A7A7] border border-transparent focus:border-[#FF5E4D] focus:outline-none transition-all"
+            className="w-full h-11 md:h-10 pl-10 pr-14 md:pr-20 rounded-full bg-[#141414] hover:bg-[#1E1E1E] focus:bg-[#1E1E1E] text-sm text-white placeholder-[#A7A7A7] border border-transparent focus:border-[#FF5E4D] focus:outline-none transition-all"
           />
           <div className="absolute right-2 md:right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
             {isSearching && (
@@ -149,7 +149,7 @@ export const TopBar: React.FC = () => {
           className={`min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0 flex items-center justify-center gap-2 px-3 md:px-3.5 py-2 md:py-1.5 rounded-full text-xs font-bold transition-colors ${
             activeView.type === "queue"
               ? "bg-[#FF5E4D] text-black"
-              : "bg-black/70 hover:bg-[#282828] text-white"
+              : "bg-black/70 hover:bg-[#1E1E1E] text-white"
           }`}
         >
           <ListMusic size={17} />

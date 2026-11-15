@@ -23,7 +23,7 @@ export const Sidebar: React.FC = () => {
   return (
     <aside className="hidden md:flex w-[260px] shrink-0 flex-col gap-2 h-full select-none bg-black">
       {/* Top Navigation Card */}
-      <div className="bg-[#121212] rounded-lg px-3 py-4 flex flex-col gap-1">
+      <div className="bg-[#000000] border border-white/[0.06] rounded-lg px-3 py-4 flex flex-col gap-1">
         <button
           type="button"
           onClick={() => navigate({ type: "home" })}
@@ -43,7 +43,7 @@ export const Sidebar: React.FC = () => {
           onClick={() => navigate({ type: "home" })}
           className={`flex items-center gap-4 px-3 py-2.5 rounded-md font-semibold text-sm transition-colors relative ${
             activeView.type === "home"
-              ? "text-white bg-[#282828]/70"
+              ? "text-white bg-[#1E1E1E]/70"
               : "text-[#B3B3B3] hover:text-white"
           }`}
         >
@@ -67,7 +67,7 @@ export const Sidebar: React.FC = () => {
           }}
           className={`flex items-center gap-4 px-3 py-2.5 rounded-md font-semibold text-sm transition-colors relative ${
             activeView.type === "search"
-              ? "text-white bg-[#282828]/70"
+              ? "text-white bg-[#1E1E1E]/70"
               : "text-[#B3B3B3] hover:text-white"
           }`}
         >
@@ -86,7 +86,7 @@ export const Sidebar: React.FC = () => {
           onClick={() => navigate({ type: "queue" })}
           className={`flex items-center justify-between px-3 py-2.5 rounded-md font-semibold text-sm transition-colors relative ${
             activeView.type === "queue"
-              ? "text-white bg-[#282828]/70"
+              ? "text-white bg-[#1E1E1E]/70"
               : "text-[#B3B3B3] hover:text-white"
           }`}
         >
@@ -101,7 +101,7 @@ export const Sidebar: React.FC = () => {
             <span>Active Queue</span>
           </div>
           {queue.length > 0 && (
-            <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-[#282828] text-[#FF5E4D]">
+            <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-[#1E1E1E] text-[#FF5E4D]">
               {queue.length}
             </span>
           )}
@@ -109,7 +109,7 @@ export const Sidebar: React.FC = () => {
       </div>
 
       {/* Your Library & Playlists Card */}
-      <div className="bg-[#121212] rounded-lg flex-1 min-h-0 flex flex-col overflow-hidden">
+      <div className="bg-[#000000] border border-white/[0.06] rounded-lg flex-1 min-h-0 flex flex-col overflow-hidden">
         <div className="px-4 pt-4 pb-2 flex items-center justify-between">
           <div className="flex items-center gap-2.5 text-[#B3B3B3]">
             <Library size={20} />
@@ -121,7 +121,7 @@ export const Sidebar: React.FC = () => {
             type="button"
             onClick={() => setNewPlaylistModalOpen(true)}
             title="New Playlist"
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-[#181818] hover:bg-[#282828] text-xs font-semibold text-[#B3B3B3] hover:text-[#FF5E4D] transition-colors"
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-[#141414] hover:bg-[#1E1E1E] text-xs font-semibold text-[#B3B3B3] hover:text-[#FF5E4D] transition-colors"
           >
             <Plus size={15} />
             <span>New Playlist</span>
@@ -136,8 +136,8 @@ export const Sidebar: React.FC = () => {
             onClick={() => navigate({ type: "likes" })}
             className={`w-full flex items-center gap-3 p-2 rounded-md text-left transition-colors ${
               activeView.type === "likes"
-                ? "bg-[#282828]"
-                : "hover:bg-[#181818]"
+                ? "bg-[#1E1E1E]"
+                : "hover:bg-[#141414]"
             }`}
           >
             <div
@@ -166,7 +166,7 @@ export const Sidebar: React.FC = () => {
 
           {/* User Playlists */}
           {playlists.length === 0 ? (
-            <div className="mt-4 mx-2 p-4 rounded-lg bg-[#181818] border border-white/5">
+            <div className="mt-4 mx-2 p-4 rounded-lg bg-[#141414] border border-white/5">
               <p className="text-sm font-bold text-white">
                 Create your first playlist
               </p>
@@ -189,7 +189,7 @@ export const Sidebar: React.FC = () => {
                 <div
                   key={pl.id}
                   className={`group flex items-center gap-3 p-2 rounded-md transition-colors ${
-                    isSelected ? "bg-[#282828]" : "hover:bg-[#181818]"
+                    isSelected ? "bg-[#1E1E1E]" : "hover:bg-[#141414]"
                   }`}
                 >
                   <button
@@ -202,8 +202,8 @@ export const Sidebar: React.FC = () => {
                       style={{
                         background:
                           pl.thumbnails.length === 0
-                            ? `linear-gradient(135deg, ${pl.cover_color} 0%, #181818 100%)`
-                            : "#181818",
+                            ? `linear-gradient(135deg, ${pl.cover_color} 0%, #141414 100%)`
+                            : "#141414",
                       }}
                     >
                       {pl.thumbnails.length >= 4 ? (

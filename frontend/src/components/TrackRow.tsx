@@ -95,10 +95,10 @@ export const TrackRow: React.FC<TrackRowProps> = ({
       }}
       className={`group flex md:grid md:grid-cols-[36px_minmax(0,2.2fr)_minmax(0,1.2fr)_140px] items-center gap-3 px-2 md:px-3 py-1.5 md:py-2 rounded-md transition-colors ${
         isDragOver
-          ? "border-t-2 border-[#FF5E4D] bg-[#282828]"
+          ? "border-t-2 border-[#FF5E4D] bg-[#1E1E1E]"
           : isActive
-            ? "bg-[#282828]/80 hover:bg-[#282828]"
-            : "hover:bg-[#282828]"
+            ? "bg-[#1E1E1E]/80 hover:bg-[#1E1E1E]"
+            : "hover:bg-[#1E1E1E]"
       }`}
     >
       {/* Index / Equalizer / Play toggle (Desktop only) */}
@@ -150,7 +150,7 @@ export const TrackRow: React.FC<TrackRowProps> = ({
         onClick={() => playTrack(track, contextQueue)}
         className="flex items-center gap-3 min-w-0 flex-1 cursor-pointer min-h-[44px]"
       >
-        <div className="relative w-11 h-11 md:w-10 md:h-10 rounded overflow-hidden shrink-0 bg-[#181818]">
+        <div className="relative w-11 h-11 md:w-10 md:h-10 rounded overflow-hidden shrink-0 bg-[#141414]">
           <img
             src={track.thumbnail}
             alt={track.title}
@@ -239,7 +239,7 @@ export const TrackRow: React.FC<TrackRowProps> = ({
           </button>
 
           {dropdownOpen && (
-            <div className="absolute right-0 bottom-full mb-1 z-40 w-48 rounded-md bg-[#282828] border border-white/10 shadow-xl py-1 text-xs">
+            <div className="absolute right-0 bottom-full mb-1 z-40 w-48 rounded-md bg-[#1E1E1E] border border-white/10 shadow-xl py-1 text-xs">
               <p className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-[#A7A7A7]">
                 Add to playlist
               </p>

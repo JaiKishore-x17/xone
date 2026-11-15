@@ -54,7 +54,7 @@ export const NewPlaylistModal: React.FC = () => {
       onClick={handleClose}
     >
       <div
-        className="w-full max-w-md rounded-xl bg-[#242424] border border-white/10 shadow-2xl p-6"
+        className="w-full max-w-md rounded-xl bg-[#141414] border border-white/10 shadow-2xl p-6"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between mb-5">
@@ -86,7 +86,7 @@ export const NewPlaylistModal: React.FC = () => {
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Late Night Synth"
-              className="w-full px-3.5 py-2.5 rounded-md bg-[#181818] text-sm text-white placeholder-[#727272] border border-white/10 focus:border-[#FF5E4D] focus:outline-none"
+              className="w-full px-3.5 py-2.5 rounded-md bg-[#1E1E1E] text-sm text-white placeholder-[#727272] border border-white/10 focus:border-[#FF5E4D] focus:outline-none"
             />
           </div>
 
@@ -104,7 +104,7 @@ export const NewPlaylistModal: React.FC = () => {
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Add an optional description..."
-              className="w-full px-3.5 py-2.5 rounded-md bg-[#181818] text-sm text-white placeholder-[#727272] border border-white/10 focus:border-[#FF5E4D] focus:outline-none resize-none"
+              className="w-full px-3.5 py-2.5 rounded-md bg-[#1E1E1E] text-sm text-white placeholder-[#727272] border border-white/10 focus:border-[#FF5E4D] focus:outline-none resize-none"
             />
           </div>
 
