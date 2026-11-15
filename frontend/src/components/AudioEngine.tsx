@@ -1,8 +1,208 @@
 import React, { useEffect, useRef } from "react";
-import { fetchStreamInfo } from "../api";
+import { toNativeTrackPayload, XoneAudio } from "../plugins/xoneAudio";
+import { fetchStreamInfo, isNativePlatform } from "../services/musicApi";
 import { usePlayerStore } from "../store/usePlayerStore";
 
-export const AudioEngine: React.FC = () => {
+const NativeAudioController: React.FC = () => {
+  const currentTrack = usePlayerStore((s) => s.currentTrack);
+  const queue = usePlayerStore((s) => s.queue);
+  const queueIndex = usePlayerStore((s) => s.queueIndex);
+  const repeat = usePlayerStore((s) => s.repeat);
+  const isPlaying = usePlayerStore((s) => s.isPlaying);
+  const volume = usePlayerStore((s) => s.volume);
+  const isMuted = usePlayerStore((s) => s.isMuted);
+  const seekRequest = usePlayerStore((s) => s.seekRequest);
+
+  const pendingTrackRef = useRef<{ videoId: string; untilMs: number } | null>(null);
+  const pendingPlayIntentRef = useRef<{ target: boolean; untilMs: number } | null>(null);
+  const skipNextPlayCallForRef = useRef<string | null>(null);
+  const suppressNextToggleForRef = useRef<boolean | null>(null);
+  const handledEndedTrackRef = useRef<string | null>(null);
+
+  // Subscribe to native MediaController playbackState updates
+  useEffect(() => {
+    let active = true;
+    const handlePromise = XoneAudio.addListener("playbackState", (event) => {
+      if (!active) return;
+      const store = usePlayerStore.getState();
+      const now = Date.now();
+      const eventVideoId = event.currentTrack?.video_id ?? null;
+
+      // Guard against stale snapshots while UI track switch is propagating to MediaController
+      if (pendingTrackRef.current) {
+        if (eventVideoId === pendingTrackRef.current.videoId) {
+          pendingTrackRef.current = null;
+        } else if (now < pendingTrackRef.current.untilMs) {
+          return;
+        } else {
+          pendingTrackRef.current = null;
+        }
+      }
+
+      // Sync track change initiated natively (notification / lock screen / gapless queue advance)
+      if (
+        event.currentTrack &&
+        event.currentTrack.video_id &&
+        event.currentTrack.video_id !== store.currentTrack?.video_id
+      ) {
+        skipNextPlayCallForRef.current = event.currentTrack.video_id;
+        handledEndedTrackRef.current = null;
+        store.syncTrackFromNative(event.currentTrack);
+      }
+
+      // Sync time and buffering state
+      store.setTimeProgress(
+        Number.isFinite(event.currentTime) ? event.currentTime : 0,
+        Number.isFinite(event.duration) && event.duration > 0
+          ? event.duration
+          : undefined
+      );
+      store.setIsBuffering(Boolean(event.isBuffering));
+
+      // Guard against stale play/pause snapshots while UI intent propagates
+      if (pendingPlayIntentRef.current) {
+        if (event.isPlaying === pendingPlayIntentRef.current.target) {
+          pendingPlayIntentRef.current = null;
+        } else if (now >= pendingPlayIntentRef.current.untilMs) {
+          pendingPlayIntentRef.current = null;
+          if (event.isPlaying !== store.isPlaying) {
+            suppressNextToggleForRef.current = event.isPlaying;
+            store.setIsPlaying(event.isPlaying);
+          }
+        }
+      } else if (event.isPlaying !== store.isPlaying) {
+        suppressNextToggleForRef.current = event.isPlaying;
+        store.setIsPlaying(event.isPlaying);
+      }
+
+      if (event.error) {
+        store.setPlaybackError(event.error);
+      }
+
+      if (event.ended && store.currentTrack) {
+        const endKey = `${store.currentTrack.video_id}:${store.queueIndex}`;
+        if (handledEndedTrackRef.current !== endKey) {
+          handledEndedTrackRef.current = endKey;
+          void store.playNextTrack(true);
+        }
+      } else if (!event.ended) {
+        handledEndedTrackRef.current = null;
+      }
+    });
+
+    return () => {
+      active = false;
+      void handlePromise.then((h) => h.remove());
+    };
+  }, []);
+
+  // Load new track when currentTrack changes from React UI
+  useEffect(() => {
+    if (!currentTrack) {
+      pendingTrackRef.current = null;
+      void XoneAudio.togglePlayPause({ playing: false }).catch(() => {});
+      return;
+    }
+
+    handledEndedTrackRef.current = null;
+
+    if (skipNextPlayCallForRef.current === currentTrack.video_id) {
+      skipNextPlayCallForRef.current = null;
+      return;
+    }
+
+    const store = usePlayerStore.getState();
+    pendingTrackRef.current = {
+      videoId: currentTrack.video_id,
+      untilMs: Date.now() + 2500,
+    };
+    pendingPlayIntentRef.current = {
+      target: store.isPlaying,
+      untilMs: Date.now() + 1500,
+    };
+
+    store.setIsBuffering(true);
+    store.setPlaybackError(null);
+
+    void XoneAudio.playTrack(toNativeTrackPayload(currentTrack))
+      .then((res) => {
+        if (usePlayerStore.getState().currentTrack?.video_id !== currentTrack.video_id) {
+          return;
+        }
+        if (res.resolutionMs !== undefined) {
+          usePlayerStore.getState().setStreamStats({
+            cached: Boolean(res.cached),
+            resolutionMs: res.resolutionMs,
+          });
+        }
+      })
+      .catch((err) => {
+        if (usePlayerStore.getState().currentTrack?.video_id !== currentTrack.video_id) {
+          return;
+        }
+        const s = usePlayerStore.getState();
+        s.setIsBuffering(false);
+        s.setIsPlaying(false);
+        s.setPlaybackError(
+          err instanceof Error ? err.message : "Unable to start native playback"
+        );
+      });
+  }, [currentTrack?.video_id]);
+
+  // Keep native ExoPlayer queue synchronized for gapless background & lock-screen skips
+  useEffect(() => {
+    if (!currentTrack || queue.length === 0) return;
+    const safeStart =
+      queueIndex >= 0 && queueIndex < queue.length
+        ? queueIndex
+        : Math.max(
+            0,
+            queue.findIndex((t) => t.video_id === currentTrack.video_id)
+          );
+
+    const payload = {
+      tracks: queue.map(toNativeTrackPayload),
+      startIndex: safeStart,
+      repeatMode: repeat,
+    };
+
+    void XoneAudio.setQueue(payload).catch(() => {
+      // ignore transient controller connection errors
+    });
+  }, [queue, queueIndex, repeat, currentTrack?.video_id]);
+
+  // Synchronize play/pause toggles from React UI
+  useEffect(() => {
+    if (!currentTrack) return;
+    if (suppressNextToggleForRef.current === isPlaying) {
+      suppressNextToggleForRef.current = null;
+      return;
+    }
+
+    pendingPlayIntentRef.current = {
+      target: isPlaying,
+      untilMs: Date.now() + 1500,
+    };
+    void XoneAudio.togglePlayPause({ playing: isPlaying }).catch(() => {});
+  }, [isPlaying, currentTrack?.video_id]);
+
+  // Synchronize seek bar scrubs
+  useEffect(() => {
+    if (!seekRequest || !Number.isFinite(seekRequest.seconds)) return;
+    void XoneAudio.seekTo({
+      positionMs: Math.max(0, Math.round(seekRequest.seconds * 1000)),
+    }).catch(() => {});
+  }, [seekRequest]);
+
+  // Synchronize player volume / mute
+  useEffect(() => {
+    void XoneAudio.setVolume({ volume: isMuted ? 0 : volume }).catch(() => {});
+  }, [volume, isMuted]);
+
+  return null;
+};
+
+const WebAudioController: React.FC = () => {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const standbyRef = useRef<{ videoId: string; audio: HTMLAudioElement } | null>(null);
   const activeLoadIdRef = useRef<number>(0);
@@ -91,7 +291,6 @@ export const AudioEngine: React.FC = () => {
             await audio.play();
           } catch (playErr) {
             if (activeLoadIdRef.current === loadId) {
-              // Autoplay policies or temporary abort
               if (playErr instanceof DOMException && playErr.name === "NotAllowedError") {
                 setIsPlaying(false);
               }
@@ -392,4 +591,8 @@ export const AudioEngine: React.FC = () => {
       className="hidden"
     />
   );
+};
+
+export const AudioEngine: React.FC = () => {
+  return isNativePlatform() ? <NativeAudioController /> : <WebAudioController />;
 };

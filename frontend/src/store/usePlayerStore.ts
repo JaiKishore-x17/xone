@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import * as api from "../api";
+import * as api from "../services/musicApi";
 import type { ActiveView, Playlist, RepeatMode, SearchResponse, Track } from "../types";
 
 const VOLUME_STORAGE_KEY = "xone_volume";
@@ -101,6 +101,7 @@ interface PlayerState {
   setPlaybackError: (err: string | null) => void;
   toggleAutoplayRadio: () => void;
   fetchAndAppendRadio: (seedVideoId: string, replaceUpcoming: boolean) => Promise<Track[]>;
+  syncTrackFromNative: (track: Track) => void;
 
   // Navigation & Search Actions
   navigate: (view: ActiveView) => void;
@@ -305,6 +306,32 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       void get().fetchAndAppendRadio(track.video_id, true);
     } else if (shouldFetchRadioExtend) {
       void get().fetchAndAppendRadio(track.video_id, false);
+    }
+  },
+
+  syncTrackFromNative: (track) => {
+    const state = get();
+    const matchIndex = state.queue.findIndex((t) => t.video_id === track.video_id);
+    const resolvedTrack = matchIndex >= 0 ? state.queue[matchIndex] : track;
+    const nextQueue = matchIndex >= 0 ? state.queue : [track];
+    const nextIndex = matchIndex >= 0 ? matchIndex : 0;
+
+    set({
+      currentTrack: resolvedTrack,
+      queue: nextQueue,
+      queueIndex: nextIndex,
+      currentTime: 0,
+      duration: resolvedTrack.duration_seconds || track.duration_seconds || 0,
+      prefetchedVideoId: null,
+      playbackError: null,
+    });
+
+    if (
+      state.repeat === "off" &&
+      state.autoplayRadio &&
+      nextIndex === nextQueue.length - 1
+    ) {
+      void get().fetchAndAppendRadio(resolvedTrack.video_id, false);
     }
   },
 
