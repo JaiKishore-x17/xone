@@ -229,7 +229,7 @@ export const PlayerBar: React.FC = () => {
                 Now Playing
               </p>
               <p className="text-xs font-semibold text-white truncate mt-0.5">
-                {currentTrack.album || "Xone Direct Audio"}
+                {currentTrack.album || "Single"}
               </p>
             </div>
 
@@ -410,7 +410,7 @@ export const PlayerBar: React.FC = () => {
                 </span>
               ) : (
                 <span className="text-[11px] text-[#727272]">
-                  Unauthenticated Direct Audio
+                  Playing from your queue
                 </span>
               )}
 

@@ -33,14 +33,9 @@ export const Sidebar: React.FC = () => {
             size={30}
             className="transition-transform duration-200 group-hover:scale-105"
           />
-          <div className="flex flex-col">
-            <span className="text-[20px] font-extrabold tracking-tight text-white leading-none">
-              Xone
-            </span>
-            <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#FF5E4D] mt-0.5">
-              Direct Audio
-            </span>
-          </div>
+          <span className="text-[21px] font-extrabold tracking-tight text-white leading-none">
+            Xone
+          </span>
         </button>
 
         <button
@@ -176,7 +171,7 @@ export const Sidebar: React.FC = () => {
                 Create your first playlist
               </p>
               <p className="text-xs text-[#B3B3B3] mt-1 leading-relaxed">
-                Organize studio tracks locally in SQLite with drag-and-drop ordering.
+                It&apos;s easy — save and organize your favorite songs in one place.
               </p>
               <button
                 type="button"

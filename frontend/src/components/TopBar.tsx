@@ -5,7 +5,6 @@ import {
   ListMusic,
   Loader2,
   Search,
-  Sparkles,
   X,
 } from "lucide-react";
 import { usePlayerStore } from "../store/usePlayerStore";
@@ -16,7 +15,6 @@ export const TopBar: React.FC = () => {
   const historyLength = usePlayerStore((s) => s.history.length);
   const searchQuery = usePlayerStore((s) => s.searchQuery);
   const isSearching = usePlayerStore((s) => s.isSearching);
-  const streamStats = usePlayerStore((s) => s.streamStats);
   const activeView = usePlayerStore((s) => s.activeView);
 
   const goBack = usePlayerStore((s) => s.goBack);
@@ -113,7 +111,7 @@ export const TopBar: React.FC = () => {
               }
             }}
             onChange={(e) => handleInputChange(e.target.value)}
-            placeholder="Search studio tracks..."
+            placeholder="What do you want to play?"
             className="w-full h-11 md:h-10 pl-10 pr-14 md:pr-20 rounded-full bg-[#242424] hover:bg-[#2A2A2A] focus:bg-[#2A2A2A] text-sm text-white placeholder-[#A7A7A7] border border-transparent focus:border-[#FF5E4D] focus:outline-none transition-all"
           />
           <div className="absolute right-2 md:right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
@@ -141,31 +139,8 @@ export const TopBar: React.FC = () => {
         </div>
       </div>
 
-      {/* Right: Stream Status Pill & Queue Button */}
+      {/* Right: Queue Button */}
       <div className="flex items-center gap-2 md:gap-3 shrink-0">
-        {streamStats && (
-          <div
-            title={
-              streamStats.cached
-                ? "Resolved from 4-hour in-memory TTL cache"
-                : "Direct unauthenticated Opus audio stream"
-            }
-            className="hidden md:flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#181818] border border-white/10 text-[11px] font-semibold"
-          >
-            <Sparkles size={12} className="text-[#FF5E4D]" />
-            <span className="text-[#B3B3B3]">
-              {streamStats.cached ? (
-                <>
-                  <span className="text-[#FF5E4D]">CACHE HIT</span>{" "}
-                  {streamStats.resolutionMs.toFixed(1)}ms
-                </>
-              ) : (
-                <>DIRECT OPUS • {Math.round(streamStats.resolutionMs)}ms</>
-              )}
-            </span>
-          </div>
-        )}
-
         <button
           type="button"
           onClick={() => navigate({ type: "queue" })}

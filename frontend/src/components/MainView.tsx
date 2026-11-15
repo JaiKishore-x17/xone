@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import {
   Clock3,
   Heart,
@@ -14,22 +14,10 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { searchTracks } from "../api";
 import { usePlayerStore } from "../store/usePlayerStore";
-import type { Track } from "../types";
 import { formatTotalDuration, getTimeGreeting } from "../utils/format";
 import { TrackContextMenu, type ContextMenuState } from "./TrackContextMenu";
 import { TrackRow } from "./TrackRow";
-
-const HOME_CATEGORIES = [
-  { label: "All", query: "top global studio hits" },
-  { label: "Synthwave", query: "synthwave electronic tracks" },
-  { label: "Pop Hits", query: "modern pop studio hits" },
-  { label: "Electronic", query: "melodic electronic house" },
-  { label: "Rock Classics", query: "classic rock studio hits" },
-  { label: "Hip-Hop", query: "hip hop studio tracks" },
-  { label: "Chill Acoustic", query: "chill acoustic indie songs" },
-];
 
 export const MainView: React.FC = () => {
   const activeView = usePlayerStore((s) => s.activeView);
@@ -65,40 +53,10 @@ export const MainView: React.FC = () => {
   const setSearchQuery = usePlayerStore((s) => s.setSearchQuery);
 
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
-  const [selectedCategory, setSelectedCategory] = useState("All");
-  const [homeTracks, setHomeTracks] = useState<Track[]>([]);
-  const [homeLoading, setHomeLoading] = useState(false);
 
   // Drag & drop state for playlist reordering
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
-
-  // Load curated studio tracks on Home view category switch
-  useEffect(() => {
-    if (activeView.type !== "home") return;
-    const cat =
-      HOME_CATEGORIES.find((c) => c.label === selectedCategory) ??
-      HOME_CATEGORIES[0];
-
-    let cancelled = false;
-    setHomeLoading(true);
-    void searchTracks(cat.query)
-      .then((res) => {
-        if (!cancelled) {
-          setHomeTracks(res.songs.slice(0, 12));
-          setHomeLoading(false);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setHomeLoading(false);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [activeView.type, selectedCategory]);
 
   const renderPlayableListHeader = () => (
     <div className="hidden md:grid grid-cols-[36px_minmax(0,2.2fr)_minmax(0,1.2fr)_140px] items-center gap-3 px-3 py-2 border-b border-white/10 text-xs font-semibold uppercase tracking-wider text-[#B3B3B3] mb-1">
@@ -115,24 +73,6 @@ export const MainView: React.FC = () => {
   if (activeView.type === "home") {
     return (
       <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 md:px-6 pb-32 md:pb-24 pt-4 md:pt-5 bg-gradient-to-b from-[#FF5E4D]/20 via-[#121212] to-[#121212]">
-        {/* Category Filter Pills */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-4 no-scrollbar">
-          {HOME_CATEGORIES.map((cat) => (
-            <button
-              key={cat.label}
-              type="button"
-              onClick={() => setSelectedCategory(cat.label)}
-              className={`min-h-[40px] md:min-h-0 px-4 md:px-3.5 py-2 md:py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-colors ${
-                selectedCategory === cat.label
-                  ? "bg-[#FF5E4D] text-black font-bold"
-                  : "bg-[#242424] hover:bg-[#303030] text-white"
-              }`}
-            >
-              {cat.label}
-            </button>
-          ))}
-        </div>
-
         {/* Dynamic Greeting + 6 Quick-Access Horizontal Cards */}
         <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white mb-4">
           {getTimeGreeting()}
@@ -216,121 +156,6 @@ export const MainView: React.FC = () => {
             </button>
           )}
         </div>
-
-        {/* Curated Clean Studio Picks Shelf */}
-        <div className="flex items-center justify-between gap-3 mb-4">
-          <div className="min-w-0">
-            <h2 className="text-lg md:text-xl font-bold text-white truncate">
-              {selectedCategory === "All"
-                ? "Fresh Studio Picks"
-                : `${selectedCategory} — Original Studio Tracks`}
-            </h2>
-            <p className="text-xs text-[#B3B3B3] mt-0.5 truncate">
-              Filtered unauthenticated audio tracks — no remixes, live, or sped-up clutter
-            </p>
-          </div>
-          {homeTracks.length > 0 && (
-            <button
-              type="button"
-              onClick={() => playTrack(homeTracks[0], homeTracks)}
-              className="min-h-[44px] md:min-h-0 px-2 shrink-0 text-xs font-bold uppercase tracking-wider text-[#FF5E4D] hover:text-[#FF7466] transition-colors"
-            >
-              Play All
-            </button>
-          )}
-        </div>
-
-        {homeLoading ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-3 md:gap-4">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <div
-                key={i}
-                className="p-3 md:p-4 rounded-lg bg-[#181818] animate-pulse space-y-3"
-              >
-                <div className="aspect-square rounded-md bg-[#282828]" />
-                <div className="h-3.5 w-3/4 rounded bg-[#282828]" />
-                <div className="h-3 w-1/2 rounded bg-[#282828]" />
-              </div>
-            ))}
-          </div>
-        ) : homeTracks.length === 0 ? (
-          <div className="rounded-xl bg-[#181818] p-8 text-center border border-white/5">
-            <Radio size={36} className="mx-auto text-[#FF5E4D] mb-3" />
-            <p className="text-base font-bold text-white">
-              Search any song, artist, or album to begin
-            </p>
-            <p className="text-xs text-[#B3B3B3] mt-1">
-              Tap the search bar above or press{" "}
-              <kbd className="px-1.5 py-0.5 bg-black rounded">Ctrl + K</kbd> on
-              desktop.
-            </p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-3 md:gap-4">
-            {homeTracks.map((track) => {
-              const isThisActive = currentTrack?.video_id === track.video_id;
-              const isThisPlaying = isThisActive && isPlaying;
-              return (
-                <div
-                  key={track.video_id}
-                  onClick={() => playTrack(track, homeTracks)}
-                  onContextMenu={(e) => {
-                    e.preventDefault();
-                    setContextMenu({
-                      track,
-                      x: e.clientX,
-                      y: e.clientY,
-                    });
-                  }}
-                  className="group p-3 md:p-3.5 rounded-lg bg-[#181818] hover:bg-[#282828] transition-colors cursor-pointer"
-                >
-                  <div className="relative aspect-square rounded-md overflow-hidden mb-3 shadow-lg bg-black">
-                    <img
-                      src={track.thumbnail}
-                      alt={track.title}
-                      loading="lazy"
-                      className="w-full h-full object-cover"
-                    />
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        playTrack(track, homeTracks);
-                      }}
-                      aria-label={isThisPlaying ? "Pause" : "Play"}
-                      className={`absolute right-2 bottom-2 w-11 h-11 rounded-full bg-[#FF5E4D] hover:bg-[#FF7466] text-black flex items-center justify-center shadow-xl transition-all duration-200 ${
-                        isThisPlaying
-                          ? "opacity-100 translate-y-0"
-                          : "opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0"
-                      }`}
-                    >
-                      {isThisPlaying ? (
-                        <Pause size={20} className="fill-black" />
-                      ) : (
-                        <Play size={20} className="fill-black ml-0.5" />
-                      )}
-                    </button>
-                  </div>
-                  <p
-                    className={`text-sm font-bold truncate ${
-                      isThisActive ? "text-[#FF5E4D]" : "text-white"
-                    }`}
-                  >
-                    {track.title}
-                  </p>
-                  <p className="text-xs text-[#B3B3B3] truncate mt-1">
-                    {track.artist}
-                  </p>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        <TrackContextMenu
-          menu={contextMenu}
-          onClose={() => setContextMenu(null)}
-        />
       </div>
     );
   }
@@ -406,7 +231,7 @@ export const MainView: React.FC = () => {
                 No custom playlists yet
               </p>
               <p className="text-xs text-[#B3B3B3] mt-1">
-                Tap New Playlist to organize tracks locally in SQLite.
+                Create a playlist to start building your collection.
               </p>
             </div>
           ) : (
@@ -494,12 +319,10 @@ export const MainView: React.FC = () => {
               <Search size={28} className="text-[#FF5E4D]" />
             </div>
             <h2 className="text-xl md:text-2xl font-extrabold text-white">
-              Search Original Studio Tracks
+              Play what you love
             </h2>
             <p className="text-sm text-[#B3B3B3] mt-2">
-              Xone automatically filters out remixes, live recordings, sped-up,
-              slowed+reverb, karaoke, and duplicate uploads unless you explicitly
-              search for them.
+              Search for songs, artists, or moods to start listening.
             </p>
             <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
               {[
@@ -523,9 +346,7 @@ export const MainView: React.FC = () => {
         ) : isSearching && !searchResults ? (
           <div className="flex flex-col items-center justify-center py-20 gap-3">
             <Loader2 size={32} className="animate-spin text-[#FF5E4D]" />
-            <p className="text-sm text-[#B3B3B3]">
-              Finding clean studio versions...
-            </p>
+            <p className="text-sm text-[#B3B3B3]">Searching...</p>
           </div>
         ) : searchError ? (
           <div className="rounded-lg bg-[#181818] border border-[#FF5E4D]/30 p-6 text-center max-w-lg mx-auto mt-10">
@@ -534,7 +355,7 @@ export const MainView: React.FC = () => {
         ) : songs.length === 0 && !topResult ? (
           <div className="text-center py-20">
             <p className="text-lg font-bold text-white">
-              No studio tracks found for &ldquo;{searchQuery}&rdquo;
+              No results found for &ldquo;{searchQuery}&rdquo;
             </p>
             <p className="text-sm text-[#B3B3B3] mt-1">
               Check your spelling or try a different artist or track name.
@@ -626,15 +447,12 @@ export const MainView: React.FC = () => {
               </div>
             </div>
 
-            {/* Full Clean Songs Table */}
+            {/* Full Songs Table */}
             <div>
               <div className="flex items-center justify-between gap-2 mb-3">
                 <h2 className="text-lg md:text-xl font-bold text-white">
                   Songs ({songs.length})
                 </h2>
-                <span className="text-xs text-[#B3B3B3] truncate">
-                  Deduplicated studio masters
-                </span>
               </div>
               {renderPlayableListHeader()}
               <div className="space-y-0.5">
@@ -700,7 +518,7 @@ export const MainView: React.FC = () => {
               Liked Songs
             </h1>
             <p className="text-xs md:text-sm text-white/80 mt-2 md:mt-3 font-medium">
-              Personal SQLite Collection • {likedSongs.length}{" "}
+              Your favorite tracks • {likedSongs.length}{" "}
               {likedSongs.length === 1 ? "song" : "songs"}
               {totalSecs > 0 ? `, ${formatTotalDuration(totalSecs)}` : ""}
             </p>
@@ -749,7 +567,7 @@ export const MainView: React.FC = () => {
                 Songs you like will appear here
               </p>
               <p className="text-sm text-[#B3B3B3] mt-1">
-                Tap the heart icon on any track to save it locally.
+                Tap the heart icon on any track to save it to your library.
               </p>
             </div>
           ) : (
@@ -1067,7 +885,7 @@ export const MainView: React.FC = () => {
             <div className="rounded-xl bg-[#181818] p-8 text-center">
               <Loader2 size={28} className="mx-auto text-[#FF5E4D] animate-spin mb-2" />
               <p className="text-sm text-[#B3B3B3]">
-                Building vibe-matched Autoplay Radio queue...
+                Finding similar tracks for your queue...
               </p>
             </div>
           ) : (
