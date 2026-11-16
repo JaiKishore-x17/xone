@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { usePlayerStore } from "../store/usePlayerStore";
 import type { Track } from "../types";
+import { DownloadStatusIcon } from "./DownloadStatusIcon";
 import type { ContextMenuState } from "./TrackContextMenu";
 
 interface TrackRowProps {
@@ -47,10 +48,13 @@ export const TrackRow: React.FC<TrackRowProps> = ({
   const currentTrack = usePlayerStore((s) => s.currentTrack);
   const isPlaying = usePlayerStore((s) => s.isPlaying);
   const likedIds = usePlayerStore((s) => s.likedIds);
+  const downloadedIds = usePlayerStore((s) => s.downloadedIds);
+  const downloadingIds = usePlayerStore((s) => s.downloadingIds);
   const playlists = usePlayerStore((s) => s.playlists);
 
   const playTrack = usePlayerStore((s) => s.playTrack);
   const toggleLike = usePlayerStore((s) => s.toggleLike);
+  const toggleDownload = usePlayerStore((s) => s.toggleDownload);
   const addTrackToPlaylist = usePlayerStore((s) => s.addTrackToPlaylist);
   const setNewPlaylistModalOpen = usePlayerStore(
     (s) => s.setNewPlaylistModalOpen
@@ -76,6 +80,8 @@ export const TrackRow: React.FC<TrackRowProps> = ({
   const isActive = currentTrack?.video_id === track.video_id;
   const isActivelyPlaying = isActive && isPlaying;
   const isLiked = Boolean(likedIds[track.video_id]);
+  const isDownloaded = Boolean(downloadedIds[track.video_id]);
+  const isDownloading = Boolean(downloadingIds[track.video_id]);
 
   return (
     <div
@@ -93,7 +99,7 @@ export const TrackRow: React.FC<TrackRowProps> = ({
           playlistId,
         });
       }}
-      className={`group flex md:grid md:grid-cols-[36px_minmax(0,2.2fr)_minmax(0,1.2fr)_140px] items-center gap-3 px-2 md:px-3 py-1.5 md:py-2 rounded-md transition-colors ${
+      className={`group flex md:grid md:grid-cols-[36px_minmax(0,2.2fr)_minmax(0,1.2fr)_168px] items-center gap-3 px-2 md:px-3 py-1.5 md:py-2 rounded-md transition-colors ${
         isDragOver
           ? "border-t-2 border-[#FF5E4D] bg-[#1E1E1E]"
           : isActive
@@ -212,6 +218,41 @@ export const TrackRow: React.FC<TrackRowProps> = ({
             </button>
           </div>
         )}
+
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            void toggleDownload(track);
+          }}
+          disabled={isDownloading}
+          title={
+            isDownloading
+              ? "Downloading..."
+              : isDownloaded
+                ? "Remove Download"
+                : "Download for offline playback"
+          }
+          aria-label={
+            isDownloading
+              ? "Downloading track"
+              : isDownloaded
+                ? "Remove download"
+                : "Download track"
+          }
+          className={`min-w-[40px] min-h-[44px] md:min-w-0 md:min-h-0 flex items-center justify-center p-1.5 md:p-1 rounded-full transition-all ${
+            isDownloading || isDownloaded
+              ? "opacity-100"
+              : "opacity-100 md:opacity-0 md:group-hover:opacity-100"
+          }`}
+        >
+          <DownloadStatusIcon
+            isDownloading={isDownloading}
+            isDownloaded={isDownloaded}
+            size={16}
+            inactiveClassName="text-[#B3B3B3] hover:text-white"
+          />
+        </button>
 
         <button
           type="button"

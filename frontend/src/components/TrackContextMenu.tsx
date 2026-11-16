@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { usePlayerStore } from "../store/usePlayerStore";
 import type { Track } from "../types";
+import { DownloadStatusIcon } from "./DownloadStatusIcon";
 
 export interface ContextMenuState {
   track: Track;
@@ -36,9 +37,12 @@ export const TrackContextMenu: React.FC<TrackContextMenuProps> = ({
 
   const playlists = usePlayerStore((s) => s.playlists);
   const likedIds = usePlayerStore((s) => s.likedIds);
+  const downloadedIds = usePlayerStore((s) => s.downloadedIds);
+  const downloadingIds = usePlayerStore((s) => s.downloadingIds);
   const playNextInQueue = usePlayerStore((s) => s.playNextInQueue);
   const addToQueue = usePlayerStore((s) => s.addToQueue);
   const toggleLike = usePlayerStore((s) => s.toggleLike);
+  const toggleDownload = usePlayerStore((s) => s.toggleDownload);
   const addTrackToPlaylist = usePlayerStore((s) => s.addTrackToPlaylist);
   const removeTrackFromPlaylist = usePlayerStore(
     (s) => s.removeTrackFromPlaylist
@@ -76,6 +80,13 @@ export const TrackContextMenu: React.FC<TrackContextMenuProps> = ({
   if (!menu) return null;
 
   const isLiked = Boolean(likedIds[menu.track.video_id]);
+  const isDownloaded = Boolean(downloadedIds[menu.track.video_id]);
+  const isDownloading = Boolean(downloadingIds[menu.track.video_id]);
+  const downloadLabel = isDownloading
+    ? "Downloading..."
+    : isDownloaded
+      ? "Remove Download"
+      : "Download";
   const viewportWidth = typeof window !== "undefined" ? window.innerWidth : 1200;
   const viewportHeight =
     typeof window !== "undefined" ? window.innerHeight : 800;
@@ -130,6 +141,24 @@ export const TrackContextMenu: React.FC<TrackContextMenuProps> = ({
             className={isLiked ? "text-[#FF5E4D] fill-[#FF5E4D]" : "text-[#B3B3B3]"}
           />
           <span>{isLiked ? "Remove from Liked Songs" : "Save to Liked Songs"}</span>
+        </button>
+
+        <button
+          type="button"
+          disabled={isDownloading}
+          onClick={() => {
+            void toggleDownload(menu.track);
+            onClose();
+          }}
+          className="w-full px-3 py-2 flex items-center gap-2.5 hover:bg-white/10 disabled:opacity-60 text-left transition-colors"
+        >
+          <DownloadStatusIcon
+            isDownloading={isDownloading}
+            isDownloaded={isDownloaded}
+            size={15}
+            inactiveClassName="text-[#B3B3B3]"
+          />
+          <span>{downloadLabel}</span>
         </button>
 
         {/* Add to Playlist nested menu */}
@@ -290,6 +319,24 @@ export const TrackContextMenu: React.FC<TrackContextMenuProps> = ({
               <span>
                 {isLiked ? "Remove from Liked Songs" : "Save to Liked Songs"}
               </span>
+            </button>
+
+            <button
+              type="button"
+              disabled={isDownloading}
+              onClick={() => {
+                void toggleDownload(menu.track);
+                onClose();
+              }}
+              className="w-full min-h-[48px] px-3 rounded-lg flex items-center gap-3.5 hover:bg-[#1E1E1E] active:bg-[#1E1E1E] disabled:opacity-60 text-left transition-colors"
+            >
+              <DownloadStatusIcon
+                isDownloading={isDownloading}
+                isDownloaded={isDownloaded}
+                size={18}
+                inactiveClassName="text-[#B3B3B3]"
+              />
+              <span>{downloadLabel}</span>
             </button>
 
             {/* Expandable Add to Playlist list */}

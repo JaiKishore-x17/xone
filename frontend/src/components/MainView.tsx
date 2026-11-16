@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import {
   Clock3,
+  Download,
   Heart,
   ListMusic,
   Loader2,
@@ -39,6 +40,7 @@ export const MainView: React.FC = () => {
   const playlists = usePlayerStore((s) => s.playlists);
   const activePlaylist = usePlayerStore((s) => s.activePlaylist);
   const likedSongs = usePlayerStore((s) => s.likedSongs);
+  const downloadedTracks = usePlayerStore((s) => s.downloadedTracks);
 
   const navigate = usePlayerStore((s) => s.navigate);
   const playTrack = usePlayerStore((s) => s.playTrack);
@@ -59,7 +61,7 @@ export const MainView: React.FC = () => {
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
   const renderPlayableListHeader = () => (
-    <div className="hidden md:grid grid-cols-[36px_minmax(0,2.2fr)_minmax(0,1.2fr)_140px] items-center gap-3 px-3 py-2 border-b border-white/10 text-xs font-semibold uppercase tracking-wider text-[#B3B3B3] mb-1">
+    <div className="hidden md:grid grid-cols-[36px_minmax(0,2.2fr)_minmax(0,1.2fr)_168px] items-center gap-3 px-3 py-2 border-b border-white/10 text-xs font-semibold uppercase tracking-wider text-[#B3B3B3] mb-1">
       <span className="text-center">#</span>
       <span>Title</span>
       <span>Album</span>
@@ -205,6 +207,57 @@ export const MainView: React.FC = () => {
             </div>
           </button>
 
+          {/* Downloaded (Offline Tracks) */}
+          <div className="rounded-xl bg-[#141414] border border-white/10 overflow-hidden">
+            <div className="flex items-center justify-between gap-3 p-2.5">
+              <button
+                type="button"
+                onClick={() => navigate({ type: "downloads" })}
+                className="flex items-center gap-3.5 min-w-0 flex-1 min-h-[48px] text-left"
+              >
+                <div className="w-12 h-12 rounded-md shrink-0 bg-[#FF5E4D] flex items-center justify-center shadow-md">
+                  <Download size={22} className="text-black" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-bold text-white truncate">
+                    Downloaded
+                  </p>
+                  <p className="text-xs text-[#B3B3B3] truncate">
+                    {downloadedTracks.length}{" "}
+                    {downloadedTracks.length === 1 ? "track" : "tracks"} saved offline
+                  </p>
+                </div>
+              </button>
+
+              {downloadedTracks.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    playTrack(downloadedTracks[0], downloadedTracks)
+                  }
+                  className="min-h-[40px] px-4 rounded-full bg-[#FF5E4D] hover:bg-[#FF7466] text-black text-xs font-bold flex items-center gap-1.5 transition-colors shrink-0"
+                >
+                  <Play size={14} className="fill-black" />
+                  <span>Play All</span>
+                </button>
+              )}
+            </div>
+
+            {downloadedTracks.length > 0 && (
+              <div className="border-t border-white/10 px-1 md:px-3 py-2 space-y-0.5">
+                {downloadedTracks.map((track, idx) => (
+                  <TrackRow
+                    key={track.video_id}
+                    track={track}
+                    index={idx}
+                    contextQueue={downloadedTracks}
+                    onOpenContextMenu={setContextMenu}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+
           {/* Active Queue Shortcut */}
           <button
             type="button"
@@ -299,6 +352,11 @@ export const MainView: React.FC = () => {
             ))
           )}
         </div>
+
+        <TrackContextMenu
+          menu={contextMenu}
+          onClose={() => setContextMenu(null)}
+        />
       </div>
     );
   }
@@ -477,16 +535,36 @@ export const MainView: React.FC = () => {
     );
   }
 
-  // ===================== LIKED SONGS VIEW =====================
-  if (activeView.type === "likes") {
-    const totalSecs = likedSongs.reduce(
+  // ===================== LIKED SONGS & DOWNLOADED VIEWS =====================
+  if (activeView.type === "likes" || activeView.type === "downloads") {
+    const isDownloadsView = activeView.type === "downloads";
+    const tracks = isDownloadsView ? downloadedTracks : likedSongs;
+    const totalSecs = tracks.reduce(
       (acc, t) => acc + (t.duration_seconds || 0),
       0
     );
-    const isPlayingLikes =
-      likedSongs.length > 0 &&
+    const isPlayingCollection =
+      tracks.length > 0 &&
       isPlaying &&
-      likedSongs.some((t) => t.video_id === currentTrack?.video_id);
+      tracks.some((t) => t.video_id === currentTrack?.video_id);
+
+    const heroIcon = isDownloadsView ? (
+      <Download
+        size={64}
+        className="text-black drop-shadow-lg md:w-[76px] md:h-[76px]"
+      />
+    ) : (
+      <Heart
+        size={64}
+        className="text-white fill-white drop-shadow-lg md:w-[76px] md:h-[76px]"
+      />
+    );
+
+    const viewTitle = isDownloadsView ? "Downloaded" : "Liked Songs";
+    const viewBadge = isDownloadsView ? "Offline Library" : "Playlist";
+    const viewLead = isDownloadsView
+      ? "Available offline"
+      : "Your favorite tracks";
 
     return (
       <div
@@ -501,25 +579,23 @@ export const MainView: React.FC = () => {
           <div
             className="w-36 h-36 sm:w-44 sm:h-44 md:w-52 md:h-52 rounded-lg shadow-2xl shrink-0 flex items-center justify-center"
             style={{
-              background:
-                "linear-gradient(135deg, #FF5E4D 0%, #9E1B12 65%, #3B0704 100%)",
+              background: isDownloadsView
+                ? "linear-gradient(135deg, #FF5E4D 0%, #FF7466 45%, #8A1E15 100%)"
+                : "linear-gradient(135deg, #FF5E4D 0%, #9E1B12 65%, #3B0704 100%)",
             }}
           >
-            <Heart
-              size={64}
-              className="text-white fill-white drop-shadow-lg md:w-[76px] md:h-[76px]"
-            />
+            {heroIcon}
           </div>
           <div className="min-w-0 w-full">
             <p className="text-[11px] md:text-xs font-bold uppercase tracking-widest text-white/90">
-              Playlist
+              {viewBadge}
             </p>
             <h1 className="text-2xl sm:text-4xl md:text-6xl font-black tracking-tight text-white mt-1 md:mt-2">
-              Liked Songs
+              {viewTitle}
             </h1>
             <p className="text-xs md:text-sm text-white/80 mt-2 md:mt-3 font-medium">
-              Your favorite tracks • {likedSongs.length}{" "}
-              {likedSongs.length === 1 ? "song" : "songs"}
+              {viewLead} • {tracks.length}{" "}
+              {tracks.length === 1 ? "song" : "songs"}
               {totalSecs > 0 ? `, ${formatTotalDuration(totalSecs)}` : ""}
             </p>
           </div>
@@ -529,20 +605,28 @@ export const MainView: React.FC = () => {
         <div className="px-4 md:px-6 py-3 md:py-4 flex items-center justify-center md:justify-start gap-5">
           <button
             type="button"
-            disabled={likedSongs.length === 0}
+            disabled={tracks.length === 0}
             onClick={() => {
-              if (likedSongs.length > 0) {
-                playTrack(likedSongs[0], likedSongs);
+              if (tracks.length > 0) {
+                playTrack(tracks[0], tracks);
               }
             }}
-            aria-label="Play Liked Songs"
-            className="w-14 h-14 rounded-full bg-[#FF5E4D] hover:bg-[#FF7466] hover:scale-105 disabled:opacity-40 disabled:hover:scale-100 text-black flex items-center justify-center shadow-xl transition-all"
+            aria-label={`Play ${viewTitle}`}
+            className={
+              isDownloadsView
+                ? "min-h-[44px] px-6 py-2.5 rounded-full bg-[#FF5E4D] hover:bg-[#FF7466] hover:scale-105 disabled:opacity-40 disabled:hover:scale-100 text-black text-sm font-bold flex items-center gap-2 shadow-xl transition-all"
+                : "w-14 h-14 rounded-full bg-[#FF5E4D] hover:bg-[#FF7466] hover:scale-105 disabled:opacity-40 disabled:hover:scale-100 text-black flex items-center justify-center shadow-xl transition-all"
+            }
           >
-            {isPlayingLikes ? (
-              <Pause size={26} className="fill-black" />
+            {isPlayingCollection ? (
+              <Pause size={isDownloadsView ? 20 : 26} className="fill-black" />
             ) : (
-              <Play size={26} className="fill-black ml-1" />
+              <Play
+                size={isDownloadsView ? 20 : 26}
+                className={isDownloadsView ? "fill-black" : "fill-black ml-1"}
+              />
             )}
+            {isDownloadsView && <span>Play All</span>}
           </button>
 
           <button
@@ -560,26 +644,34 @@ export const MainView: React.FC = () => {
 
         {/* Tracks Table */}
         <div className="px-2 md:px-6">
-          {likedSongs.length === 0 ? (
+          {tracks.length === 0 ? (
             <div className="mx-2 md:mx-0 rounded-xl bg-[#141414]/90 p-8 md:p-10 text-center mt-4">
-              <Heart size={36} className="mx-auto text-[#FF5E4D] mb-3" />
+              {isDownloadsView ? (
+                <Download size={36} className="mx-auto text-[#FF5E4D] mb-3" />
+              ) : (
+                <Heart size={36} className="mx-auto text-[#FF5E4D] mb-3" />
+              )}
               <p className="text-lg font-bold text-white">
-                Songs you like will appear here
+                {isDownloadsView
+                  ? "No downloaded tracks yet"
+                  : "Songs you like will appear here"}
               </p>
               <p className="text-sm text-[#B3B3B3] mt-1">
-                Tap the heart icon on any track to save it to your library.
+                {isDownloadsView
+                  ? "Tap the download icon on any track to listen completely offline."
+                  : "Tap the heart icon on any track to save it to your library."}
               </p>
             </div>
           ) : (
             <>
               {renderPlayableListHeader()}
               <div className="space-y-0.5">
-                {likedSongs.map((track, idx) => (
+                {tracks.map((track, idx) => (
                   <TrackRow
                     key={track.video_id}
                     track={track}
                     index={idx}
-                    contextQueue={likedSongs}
+                    contextQueue={tracks}
                     onOpenContextMenu={setContextMenu}
                   />
                 ))}

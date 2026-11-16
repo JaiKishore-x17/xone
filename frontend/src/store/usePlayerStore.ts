@@ -74,6 +74,9 @@ interface PlayerState {
   activePlaylist: Playlist | null;
   likedSongs: Track[];
   likedIds: Record<string, boolean>;
+  downloadedTracks: Track[];
+  downloadedIds: Record<string, boolean>;
+  downloadingIds: Record<string, boolean>;
 
   // Modal / UI Feedback
   isNewPlaylistModalOpen: boolean;
@@ -114,6 +117,9 @@ interface PlayerState {
   fetchLibrary: () => Promise<void>;
   loadPlaylistDetail: (playlistId: number) => Promise<void>;
   toggleLike: (track: Track) => Promise<void>;
+  downloadTrack: (track: Track) => Promise<void>;
+  removeDownload: (videoId: string) => Promise<void>;
+  toggleDownload: (track: Track) => Promise<void>;
   createPlaylist: (name: string, description: string, coverColor: string) => Promise<Playlist>;
   deletePlaylist: (playlistId: number) => Promise<void>;
   addTrackToPlaylist: (playlistId: number, track: Track) => Promise<void>;
@@ -161,6 +167,9 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   activePlaylist: null,
   likedSongs: [],
   likedIds: {},
+  downloadedTracks: [],
+  downloadedIds: {},
+  downloadingIds: {},
 
   isNewPlaylistModalOpen: false,
   toastMessage: null,
@@ -679,15 +688,20 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
   fetchLibrary: async () => {
     try {
-      const [playlists, likedSongs] = await Promise.all([
+      const [playlists, likedSongs, downloadedTracks] = await Promise.all([
         api.fetchPlaylists(),
         api.fetchLikedSongs(),
+        api.getDownloadedTracks(),
       ]);
       const likedIds: Record<string, boolean> = {};
       for (const song of likedSongs) {
         likedIds[song.video_id] = true;
       }
-      set({ playlists, likedSongs, likedIds });
+      const downloadedIds: Record<string, boolean> = {};
+      for (const song of downloadedTracks) {
+        downloadedIds[song.video_id] = true;
+      }
+      set({ playlists, likedSongs, likedIds, downloadedTracks, downloadedIds });
     } catch {
       // silent background fetch fallback
     }
@@ -732,6 +746,68 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       // revert on error
       set({ likedIds: state.likedIds, likedSongs: state.likedSongs });
       state.showToast("Failed to update Liked Songs");
+    }
+  },
+
+  downloadTrack: async (track) => {
+    const vid = track.video_id;
+    if (!vid || get().downloadingIds[vid]) return;
+
+    set((prev) => ({
+      downloadingIds: { ...prev.downloadingIds, [vid]: true },
+    }));
+
+    try {
+      await api.downloadTrack(track);
+      const freshDownloads = await api.getDownloadedTracks();
+      const syncedIds: Record<string, boolean> = {};
+      for (const s of freshDownloads) {
+        syncedIds[s.video_id] = true;
+      }
+      set({
+        downloadedTracks: freshDownloads,
+        downloadedIds: syncedIds,
+      });
+      get().showToast(`Saved "${track.title}" offline`);
+    } catch (err) {
+      get().showToast(
+        err instanceof Error ? err.message : "Failed to download track"
+      );
+    } finally {
+      set((prev) => {
+        const nextDownloading = { ...prev.downloadingIds };
+        delete nextDownloading[vid];
+        return { downloadingIds: nextDownloading };
+      });
+    }
+  },
+
+  removeDownload: async (videoId) => {
+    if (!videoId || get().downloadingIds[videoId]) return;
+    try {
+      await api.removeDownload(videoId);
+      const freshDownloads = await api.getDownloadedTracks();
+      const syncedIds: Record<string, boolean> = {};
+      for (const s of freshDownloads) {
+        syncedIds[s.video_id] = true;
+      }
+      set({
+        downloadedTracks: freshDownloads,
+        downloadedIds: syncedIds,
+      });
+      get().showToast("Removed from Downloads");
+    } catch {
+      get().showToast("Failed to remove download");
+    }
+  },
+
+  toggleDownload: async (track) => {
+    const vid = track.video_id;
+    if (!vid || get().downloadingIds[vid]) return;
+    if (get().downloadedIds[vid]) {
+      await get().removeDownload(vid);
+    } else {
+      await get().downloadTrack(track);
     }
   },
 

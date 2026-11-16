@@ -13,6 +13,7 @@ export interface Track {
   position?: number | null;
   added_at?: string | null;
   liked_at?: string | null;
+  downloadedAt?: string | null;
 }
 
 export interface SearchResponse {
@@ -50,5 +51,6 @@ export type ActiveView =
   | { type: "search" }
   | { type: "library" }
   | { type: "likes" }
+  | { type: "downloads" }
   | { type: "playlist"; playlistId: number }
   | { type: "queue" };

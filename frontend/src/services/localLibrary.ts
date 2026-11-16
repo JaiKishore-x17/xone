@@ -1,9 +1,10 @@
 import type { Playlist, Track } from "../types";
 
 const DB_NAME = "xone_local_library";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE_PLAYLISTS = "playlists";
 const STORE_LIKES = "liked_songs";
+const STORE_DOWNLOADS = "downloads";
 
 interface StoredPlaylist {
   id?: number;
@@ -35,6 +36,11 @@ function openLibraryDb(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(STORE_LIKES)) {
         db.createObjectStore(STORE_LIKES, {
           keyPath: "video_id",
+        });
+      }
+      if (!db.objectStoreNames.contains(STORE_DOWNLOADS)) {
+        db.createObjectStore(STORE_DOWNLOADS, {
+          keyPath: "id",
         });
       }
     };
@@ -309,5 +315,34 @@ export async function toggleLikeTrack(
       video_id: track.video_id,
       track: saved,
     };
+  });
+}
+
+export async function saveDownloadedTrack(track: Track): Promise<Track> {
+  return withStore(STORE_DOWNLOADS, "readwrite", async (store) => {
+    const saved: Track = {
+      ...normalizeTrack(track),
+      id: track.video_id,
+      video_id: track.video_id,
+      downloadedAt: new Date().toISOString(),
+    };
+    await promisifyRequest(store.put(saved));
+    return saved;
+  });
+}
+
+export async function removeDownloadedTrack(videoId: string): Promise<void> {
+  await withStore(STORE_DOWNLOADS, "readwrite", async (store) => {
+    await promisifyRequest(store.delete(videoId));
+  });
+}
+
+export async function getDownloadedTracks(): Promise<Track[]> {
+  return withStore(STORE_DOWNLOADS, "readonly", async (store) => {
+    const records = (await promisifyRequest(store.getAll())) as Track[];
+    records.sort((a, b) =>
+      String(b.downloadedAt || "").localeCompare(String(a.downloadedAt || ""))
+    );
+    return records;
   });
 }

@@ -197,3 +197,25 @@ export async function toggleLikeTrack(
     }
   );
 }
+
+export async function downloadTrack(track: Track): Promise<Track> {
+  if (isNativePlatform()) {
+    await XoneAudio.downloadTrack({ videoId: track.video_id });
+  }
+  return localLibrary.saveDownloadedTrack(track);
+}
+
+export async function removeDownload(videoId: string): Promise<void> {
+  if (isNativePlatform()) {
+    try {
+      await XoneAudio.deleteDownload({ videoId });
+    } catch {
+      // ignore if already missing natively
+    }
+  }
+  await localLibrary.removeDownloadedTrack(videoId);
+}
+
+export async function getDownloadedTracks(): Promise<Track[]> {
+  return localLibrary.getDownloadedTracks();
+}

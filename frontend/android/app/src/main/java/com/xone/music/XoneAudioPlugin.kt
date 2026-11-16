@@ -20,14 +20,35 @@ import com.getcapacitor.PluginCall
 import com.getcapacitor.PluginMethod
 import com.getcapacitor.annotation.CapacitorPlugin
 import com.google.common.util.concurrent.ListenableFuture
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import java.io.File
+import java.io.FileOutputStream
+import java.io.IOException
 import java.util.Locale
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 @CapacitorPlugin(name = "XoneAudio")
 class XoneAudioPlugin : Plugin() {
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private val ioExecutor = Executors.newCachedThreadPool()
+    private val pluginScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    private val downloadHttpClient: OkHttpClient by lazy {
+        OkHttpClient.Builder()
+            .connectTimeout(20, TimeUnit.SECONDS)
+            .readTimeout(60, TimeUnit.SECONDS)
+            .followRedirects(true)
+            .followSslRedirects(true)
+            .build()
+    }
 
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private var mediaController: MediaController? = null
@@ -116,6 +137,7 @@ class XoneAudioPlugin : Plugin() {
         controllerFuture?.let { MediaController.releaseFuture(it) }
         controllerFuture = null
         mediaController = null
+        pluginScope.cancel()
         ioExecutor.shutdownNow()
         super.handleOnDestroy()
     }
@@ -448,6 +470,137 @@ class XoneAudioPlugin : Plugin() {
         }
     }
 
+    @PluginMethod
+    fun downloadTrack(call: PluginCall) {
+        val videoId = sanitizeVideoId(call.getString("videoId"))
+        if (videoId.isEmpty()) {
+            call.reject("videoId is required")
+            return
+        }
+
+        pluginScope.launch(Dispatchers.IO) {
+            val offlineDir = File(context.filesDir, OFFLINE_TRACKS_DIR)
+            val targetFile = File(offlineDir, "$videoId.audio")
+            val tempFile = File(offlineDir, "$videoId.audio.tmp")
+
+            try {
+                if (!offlineDir.exists() && !offlineDir.mkdirs()) {
+                    throw IOException("Failed to create offline storage directory")
+                }
+
+                if (targetFile.exists() && targetFile.length() > 0L) {
+                    call.resolve(
+                        JSObject().apply {
+                            put("localPath", targetFile.absolutePath)
+                            put("sizeBytes", targetFile.length())
+                        }
+                    )
+                    return@launch
+                }
+
+                var resolved = XoneExtractor.resolveAudioStream(videoId)
+                var statusCode = downloadStreamToTempFile(resolved.streamUrl, tempFile)
+                if (statusCode !in 200..299) {
+                    tempFile.delete()
+                    XoneExtractor.invalidateStream(videoId)
+                    resolved = XoneExtractor.resolveAudioStream(videoId, forceRefresh = true)
+                    statusCode = downloadStreamToTempFile(resolved.streamUrl, tempFile)
+                    if (statusCode !in 200..299) {
+                        throw IOException("Download failed with HTTP $statusCode")
+                    }
+                }
+
+                if (!tempFile.exists() || tempFile.length() <= 0L) {
+                    throw IOException("Downloaded audio stream is empty")
+                }
+
+                if (targetFile.exists()) {
+                    targetFile.delete()
+                }
+                if (!tempFile.renameTo(targetFile)) {
+                    tempFile.copyTo(targetFile, overwrite = true)
+                    tempFile.delete()
+                }
+
+                call.resolve(
+                    JSObject().apply {
+                        put("localPath", targetFile.absolutePath)
+                        put("sizeBytes", targetFile.length())
+                    }
+                )
+            } catch (ex: Exception) {
+                if (tempFile.exists()) {
+                    tempFile.delete()
+                }
+                call.reject(ex.localizedMessage ?: "Failed to download track", ex)
+            }
+        }
+    }
+
+    @PluginMethod
+    fun deleteDownload(call: PluginCall) {
+        val videoId = sanitizeVideoId(call.getString("videoId"))
+        if (videoId.isEmpty()) {
+            call.reject("videoId is required")
+            return
+        }
+
+        pluginScope.launch(Dispatchers.IO) {
+            try {
+                val offlineDir = File(context.filesDir, OFFLINE_TRACKS_DIR)
+                val targetFile = File(offlineDir, "$videoId.audio")
+                val tempFile = File(offlineDir, "$videoId.audio.tmp")
+                var deleted = false
+                if (targetFile.exists()) {
+                    deleted = targetFile.delete()
+                }
+                if (tempFile.exists()) {
+                    tempFile.delete()
+                }
+                call.resolve(
+                    JSObject().apply {
+                        put("deleted", deleted)
+                        put("videoId", videoId)
+                    }
+                )
+            } catch (ex: Exception) {
+                call.reject(ex.localizedMessage ?: "Failed to delete downloaded track", ex)
+            }
+        }
+    }
+
+    private fun downloadStreamToTempFile(streamUrl: String, tempFile: File): Int {
+        val request = Request.Builder()
+            .url(streamUrl)
+            .header("User-Agent", OkHttpDownloader.USER_AGENT)
+            .get()
+            .build()
+
+        downloadHttpClient.newCall(request).execute().use { res ->
+            if (!res.isSuccessful) {
+                return res.code
+            }
+            val body = res.body ?: throw IOException("Empty audio response body")
+            body.byteStream().use { input ->
+                FileOutputStream(tempFile).use { output ->
+                    val buffer = ByteArray(64 * 1024)
+                    while (true) {
+                        val read = input.read(buffer)
+                        if (read == -1) break
+                        output.write(buffer, 0, read)
+                    }
+                    output.flush()
+                    output.fd.sync()
+                }
+            }
+            return res.code
+        }
+    }
+
+    private fun sanitizeVideoId(raw: String?): String {
+        return raw?.trim()?.replace(VIDEO_ID_SANITIZE_REGEX, "").orEmpty()
+    }
+
     private fun formatSeconds(totalSeconds: Int): String {
         if (totalSeconds <= 0) return "0:00"
         val hrs = totalSeconds / 3600
@@ -458,5 +611,10 @@ class XoneAudioPlugin : Plugin() {
         } else {
             String.format(Locale.US, "%d:%02d", mins, secs)
         }
+    }
+
+    companion object {
+        private const val OFFLINE_TRACKS_DIR = "offline_tracks"
+        private val VIDEO_ID_SANITIZE_REGEX = Regex("[^a-zA-Z0-9_-]")
     }
 }

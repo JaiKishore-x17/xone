@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { usePlayerStore } from "../store/usePlayerStore";
 import { formatTime } from "../utils/format";
+import { DownloadStatusIcon } from "./DownloadStatusIcon";
 
 export const PlayerBar: React.FC = () => {
   const currentTrack = usePlayerStore((s) => s.currentTrack);
@@ -29,6 +30,8 @@ export const PlayerBar: React.FC = () => {
   const shuffle = usePlayerStore((s) => s.shuffle);
   const repeat = usePlayerStore((s) => s.repeat);
   const likedIds = usePlayerStore((s) => s.likedIds);
+  const downloadedIds = usePlayerStore((s) => s.downloadedIds);
+  const downloadingIds = usePlayerStore((s) => s.downloadingIds);
   const prefetchedVideoId = usePlayerStore((s) => s.prefetchedVideoId);
   const playbackError = usePlayerStore((s) => s.playbackError);
   const activeView = usePlayerStore((s) => s.activeView);
@@ -42,6 +45,7 @@ export const PlayerBar: React.FC = () => {
   const setVolume = usePlayerStore((s) => s.setVolume);
   const toggleMute = usePlayerStore((s) => s.toggleMute);
   const toggleLike = usePlayerStore((s) => s.toggleLike);
+  const toggleDownload = usePlayerStore((s) => s.toggleDownload);
   const navigate = usePlayerStore((s) => s.navigate);
 
   const [isMobileExpanded, setIsMobileExpanded] = useState(false);
@@ -67,6 +71,12 @@ export const PlayerBar: React.FC = () => {
   const effectiveVolume = isMuted ? 0 : volume;
   const volumePct = Math.round(effectiveVolume * 100);
   const isLiked = currentTrack ? Boolean(likedIds[currentTrack.video_id]) : false;
+  const isDownloaded = currentTrack
+    ? Boolean(downloadedIds[currentTrack.video_id])
+    : false;
+  const isDownloading = currentTrack
+    ? Boolean(downloadingIds[currentTrack.video_id])
+    : false;
 
   const computeBarRatio = (
     clientX: number,
@@ -282,23 +292,45 @@ export const PlayerBar: React.FC = () => {
                   </p>
                 )}
               </div>
-              <button
-                type="button"
-                onClick={() => void toggleLike(currentTrack)}
-                aria-label={
-                  isLiked ? "Remove from Liked Songs" : "Save to Liked Songs"
-                }
-                className="min-w-[44px] min-h-[44px] -mr-2 flex items-center justify-center rounded-full shrink-0"
-              >
-                <Heart
-                  size={24}
-                  className={
-                    isLiked
-                      ? "text-[#FF5E4D] fill-[#FF5E4D]"
-                      : "text-[#B3B3B3] hover:text-white"
+              <div className="flex items-center shrink-0 -mr-2">
+                <button
+                  type="button"
+                  disabled={isDownloading}
+                  onClick={() => void toggleDownload(currentTrack)}
+                  aria-label={
+                    isDownloading
+                      ? "Downloading track"
+                      : isDownloaded
+                        ? "Remove download"
+                        : "Download track"
                   }
-                />
-              </button>
+                  className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-full shrink-0"
+                >
+                  <DownloadStatusIcon
+                    isDownloading={isDownloading}
+                    isDownloaded={isDownloaded}
+                    size={22}
+                    inactiveClassName="text-[#B3B3B3] hover:text-white"
+                  />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void toggleLike(currentTrack)}
+                  aria-label={
+                    isLiked ? "Remove from Liked Songs" : "Save to Liked Songs"
+                  }
+                  className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-full shrink-0"
+                >
+                  <Heart
+                    size={24}
+                    className={
+                      isLiked
+                        ? "text-[#FF5E4D] fill-[#FF5E4D]"
+                        : "text-[#B3B3B3] hover:text-white"
+                    }
+                  />
+                </button>
+              </div>
             </div>
 
             {/* Interactive Mobile Seek Slider */}
@@ -463,6 +495,33 @@ export const PlayerBar: React.FC = () => {
                   </p>
                 )}
               </div>
+              <button
+                type="button"
+                disabled={isDownloading}
+                onClick={() => void toggleDownload(currentTrack)}
+                title={
+                  isDownloading
+                    ? "Downloading..."
+                    : isDownloaded
+                      ? "Remove Download"
+                      : "Download for offline playback"
+                }
+                aria-label={
+                  isDownloading
+                    ? "Downloading track"
+                    : isDownloaded
+                      ? "Remove download"
+                      : "Download track"
+                }
+                className="p-1.5 rounded-full hover:scale-110 transition-transform shrink-0"
+              >
+                <DownloadStatusIcon
+                  isDownloading={isDownloading}
+                  isDownloaded={isDownloaded}
+                  size={18}
+                  inactiveClassName="text-[#B3B3B3] hover:text-white"
+                />
+              </button>
               <button
                 type="button"
                 onClick={() => void toggleLike(currentTrack)}

@@ -1,5 +1,6 @@
 import React from "react";
 import {
+  Download,
   Heart,
   Home,
   Library,
@@ -15,6 +16,7 @@ export const Sidebar: React.FC = () => {
   const activeView = usePlayerStore((s) => s.activeView);
   const playlists = usePlayerStore((s) => s.playlists);
   const likedSongs = usePlayerStore((s) => s.likedSongs);
+  const downloadedTracks = usePlayerStore((s) => s.downloadedTracks);
   const queue = usePlayerStore((s) => s.queue);
   const navigate = usePlayerStore((s) => s.navigate);
   const setNewPlaylistModalOpen = usePlayerStore((s) => s.setNewPlaylistModalOpen);
@@ -160,6 +162,34 @@ export const Sidebar: React.FC = () => {
               <p className="text-xs text-[#B3B3B3] truncate">
                 Playlist • {likedSongs.length}{" "}
                 {likedSongs.length === 1 ? "song" : "songs"}
+              </p>
+            </div>
+          </button>
+
+          {/* Downloaded Offline Tracks Shortcut */}
+          <button
+            type="button"
+            onClick={() => navigate({ type: "downloads" })}
+            className={`w-full flex items-center gap-3 p-2 rounded-md text-left transition-colors ${
+              activeView.type === "downloads"
+                ? "bg-[#1E1E1E]"
+                : "hover:bg-[#141414]"
+            }`}
+          >
+            <div className="w-12 h-12 rounded-md shrink-0 bg-[#1E1E1E] border border-[#FF5E4D]/30 flex items-center justify-center shadow-md">
+              <Download size={20} className="text-[#FF5E4D]" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p
+                className={`text-sm font-semibold truncate ${
+                  activeView.type === "downloads" ? "text-[#FF5E4D]" : "text-white"
+                }`}
+              >
+                Downloaded
+              </p>
+              <p className="text-xs text-[#B3B3B3] truncate">
+                Offline • {downloadedTracks.length}{" "}
+                {downloadedTracks.length === 1 ? "song" : "songs"}
               </p>
             </div>
           </button>

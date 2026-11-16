@@ -11,12 +11,14 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import java.io.File
 import java.io.IOException
 
 @OptIn(UnstableApi::class)
@@ -36,13 +38,21 @@ class XonePlaybackService : MediaSessionService() {
             .setReadTimeoutMs(15_000)
             .setAllowCrossProtocolRedirects(true)
 
-        val resolvingDataSourceFactory = ResolvingDataSource.Factory(httpDataSourceFactory) { dataSpec ->
+        val upstreamDataSourceFactory = DefaultDataSource.Factory(this, httpDataSourceFactory)
+
+        val resolvingDataSourceFactory = ResolvingDataSource.Factory(upstreamDataSourceFactory) { dataSpec ->
             val uri = dataSpec.uri
             if (uri.scheme == XONE_SCHEME) {
-                val videoId = uri.lastPathSegment
+                val rawVideoId = uri.lastPathSegment
                     ?: throw IOException("Missing track videoId in URI: $uri")
-                val resolved = XoneExtractor.resolveAudioStream(videoId)
-                dataSpec.buildUpon().setUri(Uri.parse(resolved.streamUrl)).build()
+                val videoId = rawVideoId.replace(VIDEO_ID_SANITIZE_REGEX, "")
+                val localFile = File(filesDir, "offline_tracks/$videoId.audio")
+                if (localFile.exists() && localFile.length() > 0L) {
+                    dataSpec.buildUpon().setUri(Uri.fromFile(localFile)).build()
+                } else {
+                    val resolved = XoneExtractor.resolveAudioStream(videoId)
+                    dataSpec.buildUpon().setUri(Uri.parse(resolved.streamUrl)).build()
+                }
             } else {
                 dataSpec
             }
@@ -129,5 +139,6 @@ class XonePlaybackService : MediaSessionService() {
 
     companion object {
         const val XONE_SCHEME = "xone"
+        private val VIDEO_ID_SANITIZE_REGEX = Regex("[^a-zA-Z0-9_-]")
     }
 }
