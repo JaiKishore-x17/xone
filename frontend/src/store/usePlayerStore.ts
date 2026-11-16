@@ -1,5 +1,14 @@
 import { create } from "zustand";
 import * as api from "../services/musicApi";
+import {
+  EMPTY_JAM_STATE,
+  type JamState,
+  addTrackToJam as jamAddTrackApi,
+  createJam as jamCreateApi,
+  joinJam as jamJoinApi,
+  leaveJam as jamLeaveApi,
+  setSpeakerDevices as jamSetSpeakersApi,
+} from "../services/xoneJam";
 import type { ActiveView, Playlist, RepeatMode, SearchResponse, Track } from "../types";
 
 const VOLUME_STORAGE_KEY = "xone_volume";
@@ -80,6 +89,9 @@ interface PlayerState {
 
   // Modal / UI Feedback
   isNewPlaylistModalOpen: boolean;
+  isJamModalOpen: boolean;
+  isJamBusy: boolean;
+  jamState: JamState;
   toastMessage: string | null;
 
   // Playback Actions
@@ -128,6 +140,13 @@ interface PlayerState {
 
   // UI Helpers
   setNewPlaylistModalOpen: (open: boolean) => void;
+  setJamModalOpen: (open: boolean) => void;
+  setJamState: (state: JamState) => void;
+  startJamSession: (deviceName?: string) => Promise<void>;
+  joinJamSession: (code: string, deviceName?: string) => Promise<void>;
+  leaveJamSession: () => Promise<void>;
+  addTrackToJamSession: (track: Track) => Promise<void>;
+  setJamSpeakerDevices: (deviceIds: string[]) => Promise<void>;
   showToast: (msg: string) => void;
 }
 
@@ -172,6 +191,9 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   downloadingIds: {},
 
   isNewPlaylistModalOpen: false,
+  isJamModalOpen: false,
+  isJamBusy: false,
+  jamState: EMPTY_JAM_STATE,
   toastMessage: null,
 
   showToast: (msg) => {
@@ -185,6 +207,77 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   setNewPlaylistModalOpen: (open) => set({ isNewPlaylistModalOpen: open }),
+  setJamModalOpen: (open) => set({ isJamModalOpen: open }),
+  setJamState: (jamState) => set({ jamState }),
+
+  startJamSession: async (deviceName) => {
+    if (get().isJamBusy) return;
+    set({ isJamBusy: true });
+    try {
+      const next = await jamCreateApi(deviceName);
+      set({ jamState: next });
+      get().showToast(`Jam started • Code ${next.jamCode}`);
+    } catch (err) {
+      get().showToast(
+        err instanceof Error ? err.message : "Failed to start BLE Jam"
+      );
+      throw err;
+    } finally {
+      set({ isJamBusy: false });
+    }
+  },
+
+  joinJamSession: async (code, deviceName) => {
+    if (get().isJamBusy) return;
+    set({ isJamBusy: true });
+    try {
+      const next = await jamJoinApi({ code, deviceName });
+      set({ jamState: next });
+      get().showToast(`Joined Jam ${next.jamCode}`);
+    } catch (err) {
+      get().showToast(
+        err instanceof Error ? err.message : "Failed to join BLE Jam"
+      );
+      throw err;
+    } finally {
+      set({ isJamBusy: false });
+    }
+  },
+
+  leaveJamSession: async () => {
+    try {
+      await jamLeaveApi();
+    } finally {
+      set({ jamState: EMPTY_JAM_STATE });
+      get().showToast("Left Jam session");
+    }
+  },
+
+  addTrackToJamSession: async (track) => {
+    const state = get();
+    if (!state.jamState.active) {
+      state.showToast("Start or join a Jam first");
+      return;
+    }
+    try {
+      await jamAddTrackApi(track, state.jamState.localDeviceName || undefined);
+      state.showToast(`Added "${track.title}" to Jam queue`);
+    } catch (err) {
+      state.showToast(
+        err instanceof Error ? err.message : "Failed to add track to Jam"
+      );
+    }
+  },
+
+  setJamSpeakerDevices: async (deviceIds) => {
+    try {
+      await jamSetSpeakersApi(deviceIds);
+    } catch (err) {
+      get().showToast(
+        err instanceof Error ? err.message : "Failed to update speakers"
+      );
+    }
+  },
 
   toggleAutoplayRadio: () => {
     const nextEnabled = !get().autoplayRadio;

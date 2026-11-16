@@ -7,6 +7,7 @@ import {
   ListPlus,
   Play,
   Plus,
+  Speaker,
   Trash2,
   X,
 } from "lucide-react";
@@ -39,8 +40,10 @@ export const TrackContextMenu: React.FC<TrackContextMenuProps> = ({
   const likedIds = usePlayerStore((s) => s.likedIds);
   const downloadedIds = usePlayerStore((s) => s.downloadedIds);
   const downloadingIds = usePlayerStore((s) => s.downloadingIds);
+  const jamState = usePlayerStore((s) => s.jamState);
   const playNextInQueue = usePlayerStore((s) => s.playNextInQueue);
   const addToQueue = usePlayerStore((s) => s.addToQueue);
+  const addTrackToJamSession = usePlayerStore((s) => s.addTrackToJamSession);
   const toggleLike = usePlayerStore((s) => s.toggleLike);
   const toggleDownload = usePlayerStore((s) => s.toggleDownload);
   const addTrackToPlaylist = usePlayerStore((s) => s.addTrackToPlaylist);
@@ -125,6 +128,20 @@ export const TrackContextMenu: React.FC<TrackContextMenuProps> = ({
           <ListEnd size={15} className="text-[#B3B3B3]" />
           <span>Add to Queue</span>
         </button>
+
+        {jamState.active && (
+          <button
+            type="button"
+            onClick={() => {
+              void addTrackToJamSession(menu.track);
+              onClose();
+            }}
+            className="w-full px-3 py-2 flex items-center gap-2.5 hover:bg-white/10 text-left text-[#FF5E4D] transition-colors"
+          >
+            <Speaker size={15} />
+            <span>Add to Jam Queue</span>
+          </button>
+        )}
 
         <div className="my-1 border-t border-white/10" />
 
@@ -301,6 +318,20 @@ export const TrackContextMenu: React.FC<TrackContextMenuProps> = ({
               <ListEnd size={18} className="text-[#B3B3B3]" />
               <span>Add to Queue</span>
             </button>
+
+            {jamState.active && (
+              <button
+                type="button"
+                onClick={() => {
+                  void addTrackToJamSession(menu.track);
+                  onClose();
+                }}
+                className="w-full min-h-[48px] px-3 rounded-lg flex items-center gap-3.5 hover:bg-[#1E1E1E] active:bg-[#1E1E1E] text-left text-[#FF5E4D] transition-colors"
+              >
+                <Speaker size={18} />
+                <span>Add to Jam Queue</span>
+              </button>
+            )}
 
             <button
               type="button"

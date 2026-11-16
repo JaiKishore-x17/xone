@@ -1,5 +1,6 @@
 import React, { useEffect } from "react";
 import { AudioEngine } from "./components/AudioEngine";
+import { JamModal } from "./components/JamModal";
 import { MainView } from "./components/MainView";
 import { MobileBottomNav } from "./components/MobileBottomNav";
 import { NewPlaylistModal } from "./components/NewPlaylistModal";
@@ -39,6 +40,7 @@ export const App: React.FC = () => {
 
       {/* Modals & Toast */}
       <NewPlaylistModal />
+      <JamModal />
 
       {toastMessage && (
         <div className="fixed bottom-[calc(8rem+env(safe-area-inset-bottom))] md:bottom-28 left-1/2 -translate-x-1/2 z-50 px-5 py-2.5 rounded-full bg-[#FF5E4D] text-black text-xs font-bold shadow-2xl pointer-events-none whitespace-nowrap max-w-[90vw] truncate">

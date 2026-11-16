@@ -11,6 +11,7 @@ import {
   Shuffle,
   SkipBack,
   SkipForward,
+  Speaker,
   Volume1,
   Volume2,
   VolumeX,
@@ -35,6 +36,7 @@ export const PlayerBar: React.FC = () => {
   const prefetchedVideoId = usePlayerStore((s) => s.prefetchedVideoId);
   const playbackError = usePlayerStore((s) => s.playbackError);
   const activeView = usePlayerStore((s) => s.activeView);
+  const jamState = usePlayerStore((s) => s.jamState);
 
   const togglePlay = usePlayerStore((s) => s.togglePlay);
   const playNextTrack = usePlayerStore((s) => s.playNextTrack);
@@ -46,6 +48,7 @@ export const PlayerBar: React.FC = () => {
   const toggleMute = usePlayerStore((s) => s.toggleMute);
   const toggleLike = usePlayerStore((s) => s.toggleLike);
   const toggleDownload = usePlayerStore((s) => s.toggleDownload);
+  const setJamModalOpen = usePlayerStore((s) => s.setJamModalOpen);
   const navigate = usePlayerStore((s) => s.navigate);
 
   const [isMobileExpanded, setIsMobileExpanded] = useState(false);
@@ -446,17 +449,36 @@ export const PlayerBar: React.FC = () => {
                 </span>
               )}
 
-              <button
-                type="button"
-                onClick={() => {
-                  setIsMobileExpanded(false);
-                  navigate({ type: "queue" });
-                }}
-                className="min-h-[44px] px-3 flex items-center gap-1.5 text-xs font-semibold text-[#B3B3B3] hover:text-white"
-              >
-                <ListMusic size={16} />
-                <span>Queue</span>
-              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setJamModalOpen(true)}
+                  aria-label="Open BLE Jam and Multi-Speaker"
+                  className={`min-h-[44px] px-3 flex items-center gap-1.5 text-xs font-semibold rounded-full transition-colors ${
+                    jamState.active
+                      ? "text-[#FF5E4D] bg-[#FF5E4D]/15"
+                      : "text-[#B3B3B3] hover:text-white"
+                  }`}
+                >
+                  <Speaker size={16} />
+                  <span>{jamState.active ? "Jam Live" : "Jam"}</span>
+                  {jamState.active && (
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#FF5E4D] animate-pulse" />
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsMobileExpanded(false);
+                    navigate({ type: "queue" });
+                  }}
+                  className="min-h-[44px] px-3 flex items-center gap-1.5 text-xs font-semibold text-[#B3B3B3] hover:text-white"
+                >
+                  <ListMusic size={16} />
+                  <span>Queue</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -686,6 +708,23 @@ export const PlayerBar: React.FC = () => {
               NEXT READY
             </span>
           )}
+
+          <button
+            type="button"
+            onClick={() => setJamModalOpen(true)}
+            title="BLE Jam & Multi-Speaker"
+            aria-label="Open BLE Jam and Multi-Speaker"
+            className={`relative p-1.5 transition-colors ${
+              jamState.active
+                ? "text-[#FF5E4D]"
+                : "text-[#B3B3B3] hover:text-white"
+            }`}
+          >
+            <Speaker size={18} />
+            {jamState.active && (
+              <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-[#FF5E4D] animate-pulse" />
+            )}
+          </button>
 
           <button
             type="button"

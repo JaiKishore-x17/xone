@@ -5,6 +5,7 @@ import {
   ListMusic,
   Loader2,
   Search,
+  Speaker,
   X,
 } from "lucide-react";
 import { usePlayerStore } from "../store/usePlayerStore";
@@ -16,12 +17,14 @@ export const TopBar: React.FC = () => {
   const searchQuery = usePlayerStore((s) => s.searchQuery);
   const isSearching = usePlayerStore((s) => s.isSearching);
   const activeView = usePlayerStore((s) => s.activeView);
+  const jamState = usePlayerStore((s) => s.jamState);
 
   const goBack = usePlayerStore((s) => s.goBack);
   const goForward = usePlayerStore((s) => s.goForward);
   const navigate = usePlayerStore((s) => s.navigate);
   const setSearchQuery = usePlayerStore((s) => s.setSearchQuery);
   const runSearch = usePlayerStore((s) => s.runSearch);
+  const setJamModalOpen = usePlayerStore((s) => s.setJamModalOpen);
 
   const debounceRef = useRef<number | null>(null);
   const lastSearchedRef = useRef<string>("");
@@ -139,8 +142,28 @@ export const TopBar: React.FC = () => {
         </div>
       </div>
 
-      {/* Right: Queue Button */}
-      <div className="flex items-center gap-2 md:gap-3 shrink-0">
+      {/* Right: Jam / Multi-Speaker + Queue Buttons */}
+      <div className="flex items-center gap-1.5 md:gap-2.5 shrink-0">
+        <button
+          type="button"
+          onClick={() => setJamModalOpen(true)}
+          title="BLE Jam & Multi-Speaker"
+          aria-label="Open BLE Jam and Multi-Speaker"
+          className={`relative min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0 flex items-center justify-center gap-2 px-3 md:px-3.5 py-2 md:py-1.5 rounded-full text-xs font-bold transition-colors ${
+            jamState.active
+              ? "bg-[#FF5E4D]/15 border border-[#FF5E4D] text-[#FF5E4D]"
+              : "bg-black/70 hover:bg-[#1E1E1E] text-white"
+          }`}
+        >
+          <Speaker size={17} />
+          <span className="hidden sm:inline">
+            {jamState.active ? `Jam (${jamState.participants.length})` : "Jam"}
+          </span>
+          {jamState.active && (
+            <span className="w-2 h-2 rounded-full bg-[#FF5E4D] animate-pulse" />
+          )}
+        </button>
+
         <button
           type="button"
           onClick={() => navigate({ type: "queue" })}
