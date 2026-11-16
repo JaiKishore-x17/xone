@@ -24,12 +24,16 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
+import okhttp3.Protocol
 import okhttp3.Request
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
+import java.net.SocketException
 import java.util.Locale
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -43,8 +47,10 @@ class XoneAudioPlugin : Plugin() {
 
     private val downloadHttpClient: OkHttpClient by lazy {
         OkHttpClient.Builder()
-            .connectTimeout(20, TimeUnit.SECONDS)
-            .readTimeout(60, TimeUnit.SECONDS)
+            .protocols(listOf(Protocol.HTTP_1_1))
+            .connectTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
+            .retryOnConnectionFailure(true)
             .followRedirects(true)
             .followSslRedirects(true)
             .build()
@@ -498,17 +504,7 @@ class XoneAudioPlugin : Plugin() {
                     return@launch
                 }
 
-                var resolved = XoneExtractor.resolveAudioStream(videoId)
-                var statusCode = downloadStreamToTempFile(resolved.streamUrl, tempFile)
-                if (statusCode !in 200..299) {
-                    tempFile.delete()
-                    XoneExtractor.invalidateStream(videoId)
-                    resolved = XoneExtractor.resolveAudioStream(videoId, forceRefresh = true)
-                    statusCode = downloadStreamToTempFile(resolved.streamUrl, tempFile)
-                    if (statusCode !in 200..299) {
-                        throw IOException("Download failed with HTTP $statusCode")
-                    }
-                }
+                downloadStreamChunkedToTempFile(videoId, tempFile)
 
                 if (!tempFile.exists() || tempFile.length() <= 0L) {
                     throw IOException("Downloaded audio stream is empty")
@@ -569,31 +565,108 @@ class XoneAudioPlugin : Plugin() {
         }
     }
 
-    private fun downloadStreamToTempFile(streamUrl: String, tempFile: File): Int {
-        val request = Request.Builder()
-            .url(streamUrl)
-            .header("User-Agent", OkHttpDownloader.USER_AGENT)
-            .get()
-            .build()
+    private class HttpStatusException(val code: Int) : IOException("Download failed with HTTP $code")
 
-        downloadHttpClient.newCall(request).execute().use { res ->
-            if (!res.isSuccessful) {
-                return res.code
+    private suspend fun downloadStreamChunkedToTempFile(videoId: String, tempFile: File) {
+        if (tempFile.exists()) {
+            tempFile.delete()
+        }
+
+        var currentStreamUrl = XoneExtractor.resolveAudioStream(videoId).streamUrl
+        var downloadedBytes = 0L
+        var totalBytes = -1L
+
+        while (totalBytes < 0L || downloadedBytes < totalBytes) {
+            val rangeEnd = if (totalBytes > 0L) {
+                minOf(downloadedBytes + DOWNLOAD_CHUNK_SIZE - 1L, totalBytes - 1L)
+            } else {
+                downloadedBytes + (DOWNLOAD_CHUNK_SIZE - 1L)
             }
-            val body = res.body ?: throw IOException("Empty audio response body")
-            body.byteStream().use { input ->
-                FileOutputStream(tempFile).use { output ->
-                    val buffer = ByteArray(64 * 1024)
-                    while (true) {
-                        val read = input.read(buffer)
-                        if (read == -1) break
-                        output.write(buffer, 0, read)
+
+            var chunkWritten = false
+            var lastError: Exception? = null
+
+            for (attempt in 1..MAX_CHUNK_ATTEMPTS) {
+                try {
+                    val request = Request.Builder()
+                        .url(currentStreamUrl)
+                        .header("User-Agent", DOWNLOAD_USER_AGENT)
+                        .header("Origin", YTM_ORIGIN)
+                        .header("Referer", YTM_REFERER)
+                        .header("Range", "bytes=$downloadedBytes-$rangeEnd")
+                        .get()
+                        .build()
+
+                    val (chunkBytes, parsedTotal, responseCode) =
+                        downloadHttpClient.newCall(request).execute().use { res ->
+                            if (!res.isSuccessful) {
+                                throw HttpStatusException(res.code)
+                            }
+                            val body = res.body ?: throw IOException("Empty audio response body")
+                            val contentRange = res.header("Content-Range")
+                            val totalFromHeader = contentRange?.let { hdr ->
+                                CONTENT_RANGE_REGEX.find(hdr)?.groupValues?.getOrNull(1)?.toLongOrNull()
+                            } ?: if (res.code == 200) {
+                                body.contentLength()
+                            } else {
+                                -1L
+                            }
+
+                            val bufferStream = ByteArrayOutputStream()
+                            body.byteStream().use { input ->
+                                val buf = ByteArray(64 * 1024)
+                                while (true) {
+                                    val read = input.read(buf)
+                                    if (read == -1) break
+                                    bufferStream.write(buf, 0, read)
+                                }
+                            }
+                            Triple(bufferStream.toByteArray(), totalFromHeader, res.code)
+                        }
+
+                    if (parsedTotal > 0L) {
+                        totalBytes = parsedTotal
                     }
-                    output.flush()
-                    output.fd.sync()
+
+                    if (chunkBytes.isEmpty()) {
+                        chunkWritten = true
+                        totalBytes = downloadedBytes
+                        break
+                    }
+
+                    FileOutputStream(tempFile, true).use { output ->
+                        output.write(chunkBytes)
+                        output.flush()
+                        output.fd.sync()
+                    }
+                    downloadedBytes += chunkBytes.size.toLong()
+                    chunkWritten = true
+
+                    if (responseCode == 200 && totalBytes <= 0L) {
+                        totalBytes = downloadedBytes
+                    }
+                    break
+                } catch (ex: Exception) {
+                    lastError = ex
+                    if (attempt >= MAX_CHUNK_ATTEMPTS) {
+                        throw ex
+                    }
+                    delay(CHUNK_RETRY_DELAY_MS)
+                    if (
+                        ex is SocketException ||
+                        ex.cause is SocketException ||
+                        (ex is HttpStatusException && ex.code == 403)
+                    ) {
+                        XoneExtractor.invalidateStream(videoId)
+                        currentStreamUrl =
+                            XoneExtractor.resolveAudioStream(videoId, forceRefresh = true).streamUrl
+                    }
                 }
             }
-            return res.code
+
+            if (!chunkWritten) {
+                throw lastError ?: IOException("Chunk download aborted")
+            }
         }
     }
 
@@ -615,6 +688,15 @@ class XoneAudioPlugin : Plugin() {
 
     companion object {
         private const val OFFLINE_TRACKS_DIR = "offline_tracks"
+        private const val DOWNLOAD_CHUNK_SIZE = 524_288L
+        private const val MAX_CHUNK_ATTEMPTS = 3
+        private const val CHUNK_RETRY_DELAY_MS = 300L
+        private const val DOWNLOAD_USER_AGENT =
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+        private const val YTM_ORIGIN = "https://music.youtube.com"
+        private const val YTM_REFERER = "https://music.youtube.com/"
+        private val CONTENT_RANGE_REGEX =
+            Regex("bytes\\s+\\d+-\\d+/(\\d+)", RegexOption.IGNORE_CASE)
         private val VIDEO_ID_SANITIZE_REGEX = Regex("[^a-zA-Z0-9_-]")
     }
 }
