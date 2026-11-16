@@ -208,14 +208,56 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
   setNewPlaylistModalOpen: (open) => set({ isNewPlaylistModalOpen: open }),
   setJamModalOpen: (open) => set({ isJamModalOpen: open }),
-  setJamState: (jamState) => set({ jamState }),
+  setJamState: (jamState) => {
+    const isActive = Boolean(jamState.active || jamState.isActive);
+    const normalized: JamState = {
+      ...jamState,
+      active: isActive,
+      isActive,
+    };
+
+    if (isActive) {
+      ++radioRequestNonce;
+      const jamQueue = normalized.jamQueue ?? [];
+      const activeId =
+        normalized.currentTrack?.video_id ?? get().currentTrack?.video_id ?? null;
+      const foundIdx = activeId
+        ? jamQueue.findIndex((t) => t.video_id === activeId)
+        : -1;
+
+      set({
+        jamState: normalized,
+        queue: jamQueue,
+        originalQueue: jamQueue,
+        queueIndex: foundIdx >= 0 ? foundIdx : jamQueue.length > 0 ? 0 : -1,
+        isFetchingRadio: false,
+        prefetchedVideoId: null,
+        repeat: "all",
+        ...(normalized.currentTrack
+          ? {
+              currentTrack: normalized.currentTrack,
+              isPlaying: normalized.isPlaying,
+              duration:
+                normalized.currentTrack.duration_seconds || get().duration || 0,
+            }
+          : {}),
+      });
+      return;
+    }
+
+    const wasActive = get().jamState.active;
+    set({
+      jamState: normalized,
+      ...(wasActive ? { repeat: "off", isFetchingRadio: false } : {}),
+    });
+  },
 
   startJamSession: async (deviceName) => {
     if (get().isJamBusy) return;
     set({ isJamBusy: true });
     try {
       const next = await jamCreateApi(deviceName);
-      set({ jamState: next });
+      get().setJamState(next);
       get().showToast(`Jam started • Code ${next.jamCode}`);
     } catch (err) {
       get().showToast(
@@ -232,7 +274,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     set({ isJamBusy: true });
     try {
       const next = await jamJoinApi({ code, deviceName });
-      set({ jamState: next });
+      get().setJamState(next);
       get().showToast(`Joined Jam ${next.jamCode}`);
     } catch (err) {
       get().showToast(
@@ -248,7 +290,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     try {
       await jamLeaveApi();
     } finally {
-      set({ jamState: EMPTY_JAM_STATE });
+      get().setJamState(EMPTY_JAM_STATE);
       get().showToast("Left Jam session");
     }
   },
@@ -280,6 +322,10 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   toggleAutoplayRadio: () => {
+    if (get().jamState.active) {
+      get().showToast("Autoplay Radio is disabled during a Jam");
+      return;
+    }
     const nextEnabled = !get().autoplayRadio;
     set({ autoplayRadio: nextEnabled });
     const { currentTrack, queue, queueIndex, repeat } = get();
@@ -297,6 +343,9 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   fetchAndAppendRadio: async (seedVideoId, replaceUpcoming) => {
+    if (get().jamState.active) {
+      return [];
+    }
     const myNonce = ++radioRequestNonce;
     set({ isFetchingRadio: true, radioSeedVideoId: seedVideoId });
 
@@ -348,6 +397,36 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
   playTrack: (track, contextQueue) => {
     const state = get();
+
+    // When a BLE Jam is active, route track clicks into the Jam queue and suppress solo/radio playback
+    if (state.jamState.active) {
+      const jamQueue = state.jamState.jamQueue;
+      const existingIdx = jamQueue.findIndex((t) => t.video_id === track.video_id);
+      if (state.jamState.role === "host" && existingIdx >= 0) {
+        if (state.currentTrack?.video_id === track.video_id && !contextQueue) {
+          set({ isPlaying: !state.isPlaying, playbackError: null });
+          return;
+        }
+        const selected = jamQueue[existingIdx];
+        set({
+          currentTrack: selected,
+          originalQueue: jamQueue,
+          queue: jamQueue,
+          queueIndex: existingIdx,
+          isPlaying: true,
+          isBuffering: true,
+          currentTime: 0,
+          duration: selected.duration_seconds || 0,
+          prefetchedVideoId: null,
+          playbackError: null,
+          repeat: "all",
+        });
+        return;
+      }
+
+      void state.addTrackToJamSession(track);
+      return;
+    }
 
     // If clicking the exact currently active track without a different queue override, toggle play/pause
     if (
@@ -413,6 +492,27 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
   syncTrackFromNative: (track) => {
     const state = get();
+    if (state.jamState.active) {
+      const baseQueue =
+        state.jamState.jamQueue.length > 0 ? state.jamState.jamQueue : state.queue;
+      const matchIndex = baseQueue.findIndex((t) => t.video_id === track.video_id);
+      const resolvedTrack = matchIndex >= 0 ? baseQueue[matchIndex] : track;
+      const nextQueue = matchIndex >= 0 ? baseQueue : [...baseQueue, track];
+      const nextIndex = matchIndex >= 0 ? matchIndex : nextQueue.length - 1;
+
+      set({
+        currentTrack: resolvedTrack,
+        queue: nextQueue,
+        originalQueue: nextQueue,
+        queueIndex: nextIndex,
+        currentTime: 0,
+        duration: resolvedTrack.duration_seconds || track.duration_seconds || 0,
+        prefetchedVideoId: null,
+        playbackError: null,
+      });
+      return;
+    }
+
     const matchIndex = state.queue.findIndex((t) => t.video_id === track.video_id);
     const resolvedTrack = matchIndex >= 0 ? state.queue[matchIndex] : track;
     const nextQueue = matchIndex >= 0 ? state.queue : [track];
@@ -468,9 +568,38 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   playNextTrack: async (fromEnded = false) => {
-    const { queue, queueIndex, repeat, seekTo, autoplayRadio, currentTrack } =
-      get();
+    const {
+      queue,
+      queueIndex,
+      repeat,
+      seekTo,
+      autoplayRadio,
+      currentTrack,
+      jamState,
+    } = get();
     if (queue.length === 0) return;
+
+    if (jamState.active) {
+      if (jamState.role === "guest") {
+        if (!fromEnded) {
+          get().showToast("Host controls track skipping in a Jam");
+        }
+        return;
+      }
+      const nextIdx = (Math.max(0, queueIndex) + 1) % queue.length;
+      const nextTrack = queue[nextIdx];
+      set({
+        currentTrack: nextTrack,
+        queueIndex: nextIdx,
+        isPlaying: true,
+        isBuffering: true,
+        currentTime: 0,
+        duration: nextTrack.duration_seconds || 0,
+        prefetchedVideoId: null,
+        playbackError: null,
+      });
+      return;
+    }
 
     if (fromEnded && repeat === "one") {
       seekTo(0);
@@ -543,8 +672,32 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   playPreviousTrack: () => {
-    const { currentTime, queue, queueIndex, repeat, seekTo } = get();
+    const { currentTime, queue, queueIndex, repeat, seekTo, jamState } = get();
     if (queue.length === 0) return;
+
+    if (jamState.active) {
+      if (jamState.role === "guest") {
+        get().showToast("Host controls track skipping in a Jam");
+        return;
+      }
+      if (currentTime > 3) {
+        seekTo(0);
+        return;
+      }
+      const prevIdx = (Math.max(0, queueIndex) - 1 + queue.length) % queue.length;
+      const prevTrack = queue[prevIdx];
+      set({
+        currentTrack: prevTrack,
+        queueIndex: prevIdx,
+        isPlaying: true,
+        isBuffering: true,
+        currentTime: 0,
+        duration: prevTrack.duration_seconds || 0,
+        prefetchedVideoId: null,
+        playbackError: null,
+      });
+      return;
+    }
 
     if (currentTime > 3) {
       seekTo(0);
@@ -588,6 +741,10 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
   playNextInQueue: (track) => {
     const state = get();
+    if (state.jamState.active) {
+      void state.addTrackToJamSession(track);
+      return;
+    }
     if (!state.currentTrack || state.queue.length === 0) {
       state.playTrack(track, [track]);
       state.showToast(`Playing "${track.title}"`);
@@ -614,6 +771,10 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
   addToQueue: (track) => {
     const state = get();
+    if (state.jamState.active) {
+      void state.addTrackToJamSession(track);
+      return;
+    }
     if (!state.currentTrack || state.queue.length === 0) {
       state.playTrack(track, [track]);
       state.showToast(`Playing "${track.title}"`);

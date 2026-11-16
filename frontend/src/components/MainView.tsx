@@ -41,6 +41,7 @@ export const MainView: React.FC = () => {
   const activePlaylist = usePlayerStore((s) => s.activePlaylist);
   const likedSongs = usePlayerStore((s) => s.likedSongs);
   const downloadedTracks = usePlayerStore((s) => s.downloadedTracks);
+  const jamState = usePlayerStore((s) => s.jamState);
 
   const navigate = usePlayerStore((s) => s.navigate);
   const playTrack = usePlayerStore((s) => s.playTrack);
@@ -892,42 +893,59 @@ export const MainView: React.FC = () => {
   }
 
   // ===================== QUEUE VIEW =====================
-  const upcoming = queueIndex >= 0 ? queue.slice(queueIndex + 1) : queue;
+  const jamUpcoming =
+    queueIndex >= 0
+      ? [...queue.slice(queueIndex + 1), ...queue.slice(0, queueIndex)]
+      : queue;
+  const upcoming = jamState.active
+    ? jamUpcoming
+    : queueIndex >= 0
+      ? queue.slice(queueIndex + 1)
+      : queue;
 
   return (
     <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 md:px-6 pb-[calc(8rem+env(safe-area-inset-bottom))] md:pb-24 pt-6 bg-[#000000]">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-extrabold text-white">Queue</h1>
-          <button
-            type="button"
-            onClick={toggleAutoplayRadio}
-            aria-pressed={autoplayRadio}
-            className={`min-h-[36px] inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border transition-colors ${
-              autoplayRadio
-                ? "bg-[#FF5E4D]/15 border-[#FF5E4D] text-[#FF5E4D] hover:bg-[#FF5E4D]/25"
-                : "bg-[#141414] border-white/10 text-[#B3B3B3] hover:text-white"
-            }`}
-          >
-            {isFetchingRadio ? (
-              <Loader2 size={13} className="animate-spin text-[#FF5E4D]" />
-            ) : (
+          <h1 className="text-2xl font-extrabold text-white">
+            {jamState.active ? "Jam Queue" : "Queue"}
+          </h1>
+          {jamState.active ? (
+            <span className="min-h-[36px] inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border bg-[#FF5E4D]/15 border-[#FF5E4D] text-[#FF5E4D]">
               <Radio size={13} />
-            )}
-            <span>Autoplay Radio</span>
-            <span
-              className={`px-1.5 py-0.5 rounded-full text-[10px] leading-none ${
+              <span>BLE Jam Loop • Repeat All</span>
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={toggleAutoplayRadio}
+              aria-pressed={autoplayRadio}
+              className={`min-h-[36px] inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border transition-colors ${
                 autoplayRadio
-                  ? "bg-[#FF5E4D] text-black"
-                  : "bg-white/10 text-[#B3B3B3]"
+                  ? "bg-[#FF5E4D]/15 border-[#FF5E4D] text-[#FF5E4D] hover:bg-[#FF5E4D]/25"
+                  : "bg-[#141414] border-white/10 text-[#B3B3B3] hover:text-white"
               }`}
             >
-              {autoplayRadio ? "ON" : "OFF"}
-            </span>
-          </button>
+              {isFetchingRadio ? (
+                <Loader2 size={13} className="animate-spin text-[#FF5E4D]" />
+              ) : (
+                <Radio size={13} />
+              )}
+              <span>Autoplay Radio</span>
+              <span
+                className={`px-1.5 py-0.5 rounded-full text-[10px] leading-none ${
+                  autoplayRadio
+                    ? "bg-[#FF5E4D] text-black"
+                    : "bg-white/10 text-[#B3B3B3]"
+                }`}
+              >
+                {autoplayRadio ? "ON" : "OFF"}
+              </span>
+            </button>
+          )}
         </div>
 
-        {upcoming.length > 0 && (
+        {!jamState.active && upcoming.length > 0 && (
           <button
             type="button"
             onClick={clearUpcomingQueue}
@@ -1019,6 +1037,9 @@ export const MainView: React.FC = () => {
                     </p>
                     <p className="text-xs text-[#B3B3B3] truncate">
                       {track.artist}
+                      {(track as { addedBy?: string }).addedBy
+                        ? ` • Added by ${(track as { addedBy?: string }).addedBy}`
+                        : ""}
                     </p>
                   </div>
                   {isPrefetched && (
@@ -1030,14 +1051,16 @@ export const MainView: React.FC = () => {
                   <span className="hidden md:inline text-xs text-[#B3B3B3] tabular-nums">
                     {track.duration}
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => removeFromQueue(absoluteIdx)}
-                    aria-label="Remove from queue"
-                    className="min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0 flex items-center justify-center p-2 md:p-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 rounded-full text-[#B3B3B3] hover:text-[#FF5E4D] transition-all shrink-0"
-                  >
-                    <X size={16} />
-                  </button>
+                  {!jamState.active && (
+                    <button
+                      type="button"
+                      onClick={() => removeFromQueue(absoluteIdx)}
+                      aria-label="Remove from queue"
+                      className="min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0 flex items-center justify-center p-2 md:p-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 rounded-full text-[#B3B3B3] hover:text-[#FF5E4D] transition-all shrink-0"
+                    >
+                      <X size={16} />
+                    </button>
+                  )}
                 </div>
               );
             })}

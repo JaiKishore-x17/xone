@@ -306,7 +306,14 @@ class XoneAudioPlugin : Plugin() {
 
         mainHandler.post {
             ensureController { ctrl ->
-                ctrl.setMediaItem(mediaItem)
+                val existingIndex = (0 until ctrl.mediaItemCount).indexOfFirst { idx ->
+                    ctrl.getMediaItemAt(idx).mediaId == mediaItem.mediaId
+                }
+                if (existingIndex >= 0 && ctrl.repeatMode == Player.REPEAT_MODE_ALL) {
+                    ctrl.seekTo(existingIndex, 0L)
+                } else {
+                    ctrl.setMediaItem(mediaItem)
+                }
                 ctrl.prepare()
                 ctrl.play()
                 startProgressTicker()

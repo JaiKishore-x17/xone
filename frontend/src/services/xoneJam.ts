@@ -14,6 +14,7 @@ export interface JamQueueTrack extends Track {
 
 export interface JamState {
   active: boolean;
+  isActive: boolean;
   role: "none" | "host" | "guest";
   jamCode: string;
   localDeviceId: string;
@@ -29,6 +30,7 @@ export interface JamState {
 
 export const EMPTY_JAM_STATE: JamState = {
   active: false,
+  isActive: false,
   role: "none",
   jamCode: "",
   localDeviceId: "HOST",
@@ -41,6 +43,20 @@ export const EMPTY_JAM_STATE: JamState = {
   isPlaying: false,
   positionMs: 0,
 };
+
+function normalizeJamState(raw?: Partial<JamState> | null): JamState {
+  const isActive = Boolean(raw?.active ?? raw?.isActive ?? false);
+  return {
+    ...EMPTY_JAM_STATE,
+    ...(raw ?? {}),
+    active: isActive,
+    isActive,
+    participants: raw?.participants ?? [],
+    jamQueue: raw?.jamQueue ?? [],
+    activeSpeakers: raw?.activeSpeakers ?? [],
+    currentTrack: raw?.currentTrack ?? null,
+  };
+}
 
 interface XoneJamPlugin {
   createJam(options?: { deviceName?: string }): Promise<JamState>;
@@ -82,7 +98,10 @@ function requireNativeJam(): void {
 
 export async function createJam(deviceName?: string): Promise<JamState> {
   requireNativeJam();
-  return XoneJamNative.createJam({ deviceName: deviceName?.trim() || undefined });
+  const state = await XoneJamNative.createJam({
+    deviceName: deviceName?.trim() || undefined,
+  });
+  return normalizeJamState(state);
 }
 
 export async function joinJam(options: {
@@ -90,10 +109,11 @@ export async function joinJam(options: {
   deviceName?: string;
 }): Promise<JamState> {
   requireNativeJam();
-  return XoneJamNative.joinJam({
+  const state = await XoneJamNative.joinJam({
     code: options.code.trim(),
     deviceName: options.deviceName?.trim() || undefined,
   });
+  return normalizeJamState(state);
 }
 
 export async function leaveJam(): Promise<void> {
@@ -127,7 +147,8 @@ export async function getJamState(): Promise<JamState> {
   if (!Capacitor.isNativePlatform()) {
     return EMPTY_JAM_STATE;
   }
-  return XoneJamNative.getJamState();
+  const state = await XoneJamNative.getJamState();
+  return normalizeJamState(state);
 }
 
 export async function onJamStateUpdated(
@@ -136,7 +157,9 @@ export async function onJamStateUpdated(
   if (!Capacitor.isNativePlatform()) {
     return NOOP_HANDLE;
   }
-  return XoneJamNative.addListener("jamStateUpdated", cb);
+  return XoneJamNative.addListener("jamStateUpdated", (state) => {
+    cb(normalizeJamState(state));
+  });
 }
 
 export async function onJamEnded(

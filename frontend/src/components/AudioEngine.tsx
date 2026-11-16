@@ -12,6 +12,11 @@ const NativeAudioController: React.FC = () => {
   const volume = usePlayerStore((s) => s.volume);
   const isMuted = usePlayerStore((s) => s.isMuted);
   const seekRequest = usePlayerStore((s) => s.seekRequest);
+  const jamActive = usePlayerStore((s) => s.jamState.active);
+  const jamRole = usePlayerStore((s) => s.jamState.role);
+  const jamQueue = usePlayerStore((s) => s.jamState.jamQueue);
+  const jamActiveSpeakers = usePlayerStore((s) => s.jamState.activeSpeakers);
+  const jamLocalDeviceId = usePlayerStore((s) => s.jamState.localDeviceId);
 
   const pendingTrackRef = useRef<{ videoId: string; untilMs: number } | null>(null);
   const pendingPlayIntentRef = useRef<{ target: boolean; untilMs: number } | null>(null);
@@ -79,7 +84,7 @@ const NativeAudioController: React.FC = () => {
         store.setPlaybackError(event.error);
       }
 
-      if (event.ended && store.currentTrack) {
+      if (event.ended && store.currentTrack && !store.jamState.active) {
         const endKey = `${store.currentTrack.video_id}:${store.queueIndex}`;
         if (handledEndedTrackRef.current !== endKey) {
           handledEndedTrackRef.current = endKey;
@@ -98,6 +103,10 @@ const NativeAudioController: React.FC = () => {
 
   // Load new track when currentTrack changes from React UI
   useEffect(() => {
+    if (jamActive && jamRole === "guest") {
+      return;
+    }
+
     if (!currentTrack) {
       pendingTrackRef.current = null;
       void XoneAudio.togglePlayPause({ playing: false }).catch(() => {});
@@ -112,6 +121,14 @@ const NativeAudioController: React.FC = () => {
     }
 
     const store = usePlayerStore.getState();
+    if (
+      store.jamState.active &&
+      store.jamState.role === "host" &&
+      store.jamState.currentTrack?.video_id === currentTrack.video_id
+    ) {
+      return;
+    }
+
     pendingTrackRef.current = {
       videoId: currentTrack.video_id,
       untilMs: Date.now() + 2500,
@@ -151,28 +168,44 @@ const NativeAudioController: React.FC = () => {
 
   // Keep native ExoPlayer queue synchronized for gapless background & lock-screen skips
   useEffect(() => {
-    if (!currentTrack || queue.length === 0) return;
+    if (jamActive && jamRole === "guest") {
+      return;
+    }
+
+    const effectiveTracks =
+      jamActive && jamRole === "host" ? jamQueue : queue;
+    if (!currentTrack || effectiveTracks.length === 0) return;
+
     const safeStart =
-      queueIndex >= 0 && queueIndex < queue.length
+      !jamActive && queueIndex >= 0 && queueIndex < effectiveTracks.length
         ? queueIndex
         : Math.max(
             0,
-            queue.findIndex((t) => t.video_id === currentTrack.video_id)
+            effectiveTracks.findIndex((t) => t.video_id === currentTrack.video_id)
           );
 
     const payload = {
-      tracks: queue.map(toNativeTrackPayload),
+      tracks: effectiveTracks.map(toNativeTrackPayload),
       startIndex: safeStart,
-      repeatMode: repeat,
+      repeatMode: jamActive ? "all" : repeat,
     };
 
     void XoneAudio.setQueue(payload).catch(() => {
       // ignore transient controller connection errors
     });
-  }, [queue, queueIndex, repeat, currentTrack?.video_id]);
+  }, [
+    queue,
+    queueIndex,
+    repeat,
+    currentTrack?.video_id,
+    jamActive,
+    jamRole,
+    jamQueue,
+  ]);
 
   // Synchronize play/pause toggles from React UI
   useEffect(() => {
+    if (jamActive && jamRole === "guest") return;
     if (!currentTrack) return;
     if (suppressNextToggleForRef.current === isPlaying) {
       suppressNextToggleForRef.current = null;
@@ -184,20 +217,25 @@ const NativeAudioController: React.FC = () => {
       untilMs: Date.now() + 1500,
     };
     void XoneAudio.togglePlayPause({ playing: isPlaying }).catch(() => {});
-  }, [isPlaying, currentTrack?.video_id]);
+  }, [isPlaying, currentTrack?.video_id, jamActive, jamRole]);
 
   // Synchronize seek bar scrubs
   useEffect(() => {
+    if (jamActive && jamRole === "guest") return;
     if (!seekRequest || !Number.isFinite(seekRequest.seconds)) return;
     void XoneAudio.seekTo({
       positionMs: Math.max(0, Math.round(seekRequest.seconds * 1000)),
     }).catch(() => {});
-  }, [seekRequest]);
+  }, [seekRequest, jamActive, jamRole]);
 
-  // Synchronize player volume / mute
+  // Synchronize player volume / mute (respecting BLE Jam speaker toggles)
   useEffect(() => {
+    if (jamActive && !jamActiveSpeakers.includes(jamLocalDeviceId)) {
+      void XoneAudio.setVolume({ volume: 0 }).catch(() => {});
+      return;
+    }
     void XoneAudio.setVolume({ volume: isMuted ? 0 : volume }).catch(() => {});
-  }, [volume, isMuted]);
+  }, [volume, isMuted, jamActive, jamActiveSpeakers, jamLocalDeviceId]);
 
   return null;
 };

@@ -339,6 +339,28 @@ class XoneBleJamManager private constructor(private val appContext: Context) {
             emitStateToUi()
         }
 
+        override fun onPlaybackStateChanged(playbackState: Int) {
+            if (!isActive || role != ROLE_HOST) return
+            if (playbackState != Player.STATE_ENDED) return
+            val ctrl = mediaController ?: return
+            val firstTrack = synchronized(stateLock) { jamQueue.firstOrNull() } ?: return
+
+            synchronized(stateLock) {
+                currentTrack = firstTrack
+                jamPositionMs = 0L
+                jamIsPlaying = true
+            }
+
+            suppressHostPlayerEventsUntilMs = SystemClock.elapsedRealtime() + 800L
+            ctrl.repeatMode = Player.REPEAT_MODE_ALL
+            ctrl.seekTo(0, 0L)
+            ctrl.play()
+
+            broadcastStateSyncToAll()
+            coordinateHostSyncPlay(fromTrackTransition = true)
+            emitStateToUi()
+        }
+
         override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
             if (!isActive || role != ROLE_HOST) return
             if (SystemClock.elapsedRealtime() < suppressHostPlayerEventsUntilMs) return
@@ -458,20 +480,32 @@ class XoneBleJamManager private constructor(private val appContext: Context) {
                     ctrl.removeListener(hostPlayerListener)
                     ctrl.addListener(hostPlayerListener)
                     ctrl.volume = 1.0f
+                    ctrl.repeatMode = Player.REPEAT_MODE_ALL
 
                     val curItem = ctrl.currentMediaItem
                     if (curItem != null) {
+                        val curIdx = ctrl.currentMediaItemIndex
+                        if (curIdx >= 0 && curIdx < ctrl.mediaItemCount) {
+                            if (ctrl.mediaItemCount > curIdx + 1) {
+                                ctrl.removeMediaItems(curIdx + 1, ctrl.mediaItemCount)
+                            }
+                            if (curIdx > 0) {
+                                ctrl.removeMediaItems(0, curIdx)
+                            }
+                        }
                         val seedTrack = JamTrack.fromMediaItem(curItem, cleanName)
                         if (seedTrack != null) {
                             synchronized(stateLock) {
                                 currentTrack = seedTrack
-                                jamIsPlaying = ctrl.isPlaying
+                                jamIsPlaying = ctrl.isPlaying || ctrl.playWhenReady
                                 jamPositionMs = ctrl.currentPosition.coerceAtLeast(0L)
                                 if (jamQueue.none { it.videoId == seedTrack.videoId }) {
                                     jamQueue.add(seedTrack)
                                 }
                             }
                         }
+                    } else {
+                        ctrl.clearMediaItems()
                     }
                     startHostPeriodicBeacon()
                     emitStateToUi()
@@ -549,6 +583,7 @@ class XoneBleJamManager private constructor(private val appContext: Context) {
 
             return JSObject().apply {
                 put("active", isActive)
+                put("isActive", isActive)
                 put("role", role)
                 put("jamCode", jamCode)
                 put("localDeviceId", localDeviceId)
@@ -869,24 +904,36 @@ class XoneBleJamManager private constructor(private val appContext: Context) {
         if (!isActive || role != ROLE_HOST) return
 
         val shouldStartNow: Boolean
+        val queueSnapshot: List<JamTrack>
         synchronized(stateLock) {
+            val wasEmpty = jamQueue.isEmpty() || currentTrack == null
             if (jamQueue.none { it.videoId == jamTrack.videoId }) {
                 jamQueue.add(jamTrack)
                 if (jamQueue.size > MAX_QUEUE_TRACKS) jamQueue.removeAt(0)
             }
-            shouldStartNow = currentTrack == null
+            shouldStartNow = wasEmpty
             if (shouldStartNow) {
                 currentTrack = jamTrack
                 jamIsPlaying = true
                 jamPositionMs = 0L
             }
+            queueSnapshot = ArrayList(jamQueue)
         }
 
         ensureController { ctrl ->
+            ctrl.repeatMode = Player.REPEAT_MODE_ALL
             val mediaItem = jamTrack.toMediaItem()
-            if (shouldStartNow || ctrl.mediaItemCount == 0) {
+            val playerIdle =
+                ctrl.mediaItemCount == 0 ||
+                    ctrl.playbackState == Player.STATE_IDLE ||
+                    ctrl.playbackState == Player.STATE_ENDED
+
+            if (shouldStartNow || playerIdle) {
+                val items = queueSnapshot.map { it.toMediaItem() }
+                val startIdx = queueSnapshot.indexOfFirst { it.videoId == jamTrack.videoId }
+                    .coerceAtLeast(0)
                 suppressHostPlayerEventsUntilMs = SystemClock.elapsedRealtime() + 800L
-                ctrl.setMediaItem(mediaItem)
+                ctrl.setMediaItems(items, startIdx, 0L)
                 ctrl.prepare()
                 ctrl.play()
                 broadcastStateSyncToAll()
@@ -1766,6 +1813,7 @@ class XoneBleJamManager private constructor(private val appContext: Context) {
 
         mediaController?.removeListener(hostPlayerListener)
         mediaController?.let { ctrl ->
+            ctrl.repeatMode = Player.REPEAT_MODE_OFF
             if (ctrl.volume < 0.99f) {
                 ctrl.volume = 1.0f
             }
