@@ -1,66 +1,44 @@
 # Xone
 
-**Xone** is an ad-free, local-first personal music streaming web application designed with a high-contrast **Black (`#000000` / `#121212` / `#181818`) & Hyper Coral (`#FF5E4D`)** interface.
+**Xone** is a standalone, local-first personal music player for Android designed with a pure **OLED Black & Hyper Coral** interface. Built with Capacitor, React, and native Kotlin audio services, it runs completely on-device with zero external servers required.
+
+---
+
+## Features
+
+- **Pure OLED Dark UI**: Seamless edge-to-edge system bars, notch blending, ambient gradient accents, and a full-screen Now Playing sheet.
+- **Original Studio Track Search**: Filters out unofficial uploads, remixes, covers, slowed/reverb edits, and lyric videos to surface clean studio tracks and high-resolution cover art.
+- **Background & Lock-Screen Playback**: Powered by native Android Media3 (`ExoPlayer` + `MediaSessionService`) for uninterrupted background audio, lock-screen media controls, seek-bar scrubbing, automatic call/audio-focus handling, and Bluetooth headset support.
+- **Offline Downloads**: Save any track directly to internal storage using chunked byte-range streaming for reliable, instant offline playback in airplane mode.
+- **Zero-Server BLE Jam & Multi-Speaker Sync**: Host or join local listening sessions using a 6-digit PIN over Bluetooth Low Energy (BLE). Guests can add songs to the shared looping queue, and the host can select multiple connected phones to act as synchronized wireless speakers.
+- **On-Device Library & Autoplay Radio**: Create and reorder custom playlists, manage Liked Songs, and discover similar tracks automatically through vibe-matched radio queues—all stored locally in IndexedDB.
 
 ---
 
 ## Architecture
 
-- **Frontend (`/frontend`)**: React 18, TypeScript, Vite, Tailwind CSS, Lucide Icons, Zustand state store, browser Media Session API, keyboard shortcuts, and smart next-track standby prefetching.
-- **Backend (`/backend`)**: Python 3.11+, FastAPI, Uvicorn, `ytmusicapi`, `yt-dlp`, `httpx`, and SQLite (`aiosqlite` -> `backend/xone.db`).
-
-### Key Engineering Highlights
-
-1. **Clean "Original Track Only" Search (`GET /api/search?q=...`)**
-   - Queries `ytmusicapi` unauthenticated with `filter="songs"` (`limit=20`) alongside a `limit=5` general query for the `Top result` hero card.
-   - Prefers `MUSIC_VIDEO_TYPE_ATV` (Audio Track Video) results when available.
-   - Filters out noise keywords (`remix`, `live`, `sped up`, `slowed`, `reverb`, `cover`, `karaoke`, `instrumental`, `8d audio`) unless explicitly requested in the query.
-   - Deduplicates tracks by `(normalized_base_title, primary_artist)`.
-
-2. **Zero-Delay Direct Audio Streaming & Byte-Range Proxy**
-   - `GET /api/stream/{video_id}` extracts audio-only streams (`bestaudio[acodec=opus]/bestaudio/best`, `download=False`) strictly unauthenticated without cookies.
-   - 4-hour in-memory TTL cache resolves repeat plays and queue jumps in `<5ms`.
-   - `GET /api/proxy/{video_id}` streams upstream bytes asynchronously via `httpx` with full `Range` header forwarding (`206 Partial Content`) for instant HTML5 `<audio>` scrubbing and automatic 1-time refresh recovery on expired/403 URLs.
-
-3. **Data-Conscious Smart Prefetching**
-   - Never prefetches search result lists.
-   - Automatically warms and preloads **only Track N+1** in the active queue into a standby `Audio()` instance after Track N passes **15 seconds** of playback.
-
-4. **Local SQLite Library (`backend/xone.db`)**
-   - Full CRUD for playlists (`GET/POST/DELETE /api/playlists`), playlist tracks (`POST/DELETE /api/playlists/{id}/tracks`, `PUT /api/playlists/{id}/tracks/reorder`), and Liked Songs (`GET /api/likes`, `POST /api/likes/{video_id}`).
-
-5. **OS & Keyboard Controls**
-   - Native `navigator.mediaSession` metadata and action handlers (hardware media keys, lock screen, Bluetooth controls).
-   - `Space` (Play/Pause), `ArrowLeft` / `ArrowRight` (Seek ±5s), `Ctrl/Cmd + K` (Focus search).
+- **UI Layer**: React 18, TypeScript, Vite, Tailwind CSS, Zustand, and Lucide Icons.
+- **Mobile Bridge & Storage**: Capacitor for Android (`com.xone.music`) with local IndexedDB persistence for playlists, liked tracks, and offline download metadata.
+- **Native Android Engine (Kotlin)**:
+  - **Media3 Playback Service**: Hardware-accelerated background audio service with wake-lock management, audio-focus ducking, and local file resolution.
+  - **On-Device Stream & Metadata Resolver**: Direct client-side track discovery, radio queue generation, and cached audio stream resolution.
+  - **BLE Jam Manager**: Custom BLE GATT profile handling 6-digit session discovery, shared queue synchronization, and clock-offset calibration across active speaker devices.
 
 ---
 
-## Setup & Running Locally
+## Building the Android APK
 
-### 1. Backend (`/backend`)
+1. **Install Dependencies & Build Web Assets**
+   Navigate to the `frontend` directory, install Node packages, and generate the production web bundle (`npm install` followed by `npm run build`).
 
-```bash
-cd backend
-python -m venv .venv
-# Windows PowerShell:
-.\.venv\Scripts\Activate.ps1
-# macOS/Linux:
-# source .venv/bin/activate
+2. **Sync with Capacitor**
+   Sync the compiled web assets and native plugins into the Android project (`npx cap sync android`).
 
-pip install -r requirements.txt
-uvicorn main:app --host 127.0.0.1 --port 8000 --reload
-```
+3. **Compile the APK**
+   Open the `frontend/android` folder in Android Studio (or run the Gradle wrapper task `assembleDebug` with JDK 21) to generate the installable APK at `frontend/android/app/build/outputs/apk/debug/app-debug.apk`.
 
-The backend API will run at `http://127.0.0.1:8000` (health check: `http://127.0.0.1:8000/api/health`).
+---
 
-### 2. Frontend (`/frontend`)
+## Disclaimer
 
-In a second terminal:
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-Open `http://localhost:5173` in your browser. Vite proxies `/api/*` requests directly to `http://127.0.0.1:8000`.
+Xone is a personal passion project built for private, non-commercial use. No copyrighted media is hosted or distributed by this repository.
