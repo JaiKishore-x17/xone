@@ -37,6 +37,8 @@ export const PlayerBar: React.FC = () => {
   const playbackError = usePlayerStore((s) => s.playbackError);
   const activeView = usePlayerStore((s) => s.activeView);
   const jamState = usePlayerStore((s) => s.jamState);
+  const eightDEnabled = usePlayerStore((s) => s.eightDEnabled);
+  const srEnabled = usePlayerStore((s) => s.srEnabled);
 
   const togglePlay = usePlayerStore((s) => s.togglePlay);
   const playNextTrack = usePlayerStore((s) => s.playNextTrack);
@@ -48,6 +50,8 @@ export const PlayerBar: React.FC = () => {
   const toggleMute = usePlayerStore((s) => s.toggleMute);
   const toggleLike = usePlayerStore((s) => s.toggleLike);
   const toggleDownload = usePlayerStore((s) => s.toggleDownload);
+  const toggleEightD = usePlayerStore((s) => s.toggleEightD);
+  const toggleSlowedReverb = usePlayerStore((s) => s.toggleSlowedReverb);
   const setJamModalOpen = usePlayerStore((s) => s.setJamModalOpen);
   const navigate = usePlayerStore((s) => s.navigate);
 
@@ -439,13 +443,42 @@ export const PlayerBar: React.FC = () => {
 
             {/* Bottom Utility Row */}
             <div className="flex items-center justify-between pt-1">
-              {prefetchedVideoId ? (
+              {!jamState.isActive ? (
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={toggleEightD}
+                    aria-pressed={eightDEnabled}
+                    aria-label="Toggle 8D Spatial Audio"
+                    className={`min-h-[34px] px-3 rounded-full text-xs tracking-wide transition-colors ${
+                      eightDEnabled
+                        ? "bg-[#FF5E4D]/20 border border-[#FF5E4D] text-[#FF5E4D] font-semibold"
+                        : "bg-[#181818] border border-white/10 text-zinc-400"
+                    }`}
+                  >
+                    8D
+                  </button>
+                  <button
+                    type="button"
+                    onClick={toggleSlowedReverb}
+                    aria-pressed={srEnabled}
+                    aria-label="Toggle Slowed and Reverb"
+                    className={`min-h-[34px] px-3 rounded-full text-xs tracking-wide transition-colors ${
+                      srEnabled
+                        ? "bg-[#FF5E4D]/20 border border-[#FF5E4D] text-[#FF5E4D] font-semibold"
+                        : "bg-[#181818] border border-white/10 text-zinc-400"
+                    }`}
+                  >
+                    SR
+                  </button>
+                </div>
+              ) : prefetchedVideoId ? (
                 <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#141414] border border-[#FF5E4D]/30 text-[10px] font-bold text-[#FF5E4D] tracking-wide">
                   NEXT READY
                 </span>
               ) : (
                 <span className="text-[11px] text-[#727272]">
-                  Playing from your queue
+                  Playing from Jam queue
                 </span>
               )}
 

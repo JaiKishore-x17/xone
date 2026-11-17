@@ -479,6 +479,7 @@ class XoneBleJamManager private constructor(private val appContext: Context) {
                     ?: throw IllegalStateException("BLE advertising is not supported on this device.")
 
                 cleanupInternal(emitEnded = false, reason = "")
+                XonePlaybackService.instance?.resetAudioEffects()
 
                 val cleanName = deviceName?.trim().orEmpty().ifEmpty { Build.MODEL ?: "Host Phone" }
                 val code = Random.nextInt(100_000, 1_000_000).toString()
@@ -517,6 +518,7 @@ class XoneBleJamManager private constructor(private val appContext: Context) {
                     ctrl.removeListener(hostPlayerListener)
                     ctrl.addListener(hostPlayerListener)
                     ctrl.volume = 1.0f
+                    ctrl.playbackParameters = PlaybackParameters(1.0f, 1.0f)
                     ctrl.repeatMode = Player.REPEAT_MODE_ALL
 
                     val curItem = ctrl.currentMediaItem
@@ -569,6 +571,7 @@ class XoneBleJamManager private constructor(private val appContext: Context) {
                     ?: throw IllegalStateException("BLE scanning is unavailable on this device.")
 
                 cleanupInternal(emitEnded = false, reason = "")
+                XonePlaybackService.instance?.resetAudioEffects()
 
                 val cleanName = deviceName?.trim().orEmpty().ifEmpty { Build.MODEL ?: "Guest Phone" }
 
@@ -589,7 +592,9 @@ class XoneBleJamManager private constructor(private val appContext: Context) {
                 bleScanner = scanner
                 pendingJoinCallback = callback
 
-                ensureController { /* warm controller early */ }
+                ensureController { ctrl ->
+                    ctrl.playbackParameters = PlaybackParameters(1.0f, 1.0f)
+                }
                 startGuestScan(scanner, cleanCode)
             } catch (ex: Exception) {
                 cleanupInternal(emitEnded = false, reason = "")
@@ -2577,6 +2582,10 @@ class XoneBleJamManager private constructor(private val appContext: Context) {
         private fun JSONObject.optCleanString(key: String, fallback: String = ""): String {
             if (!has(key) || isNull(key)) return fallback
             return optString(key, fallback).trim().ifEmpty { fallback }
+        }
+
+        fun isJamActive(): Boolean {
+            return instance?.let { it.isActive || it.role != ROLE_NONE } ?: false
         }
 
         fun getInstance(context: Context): XoneBleJamManager {

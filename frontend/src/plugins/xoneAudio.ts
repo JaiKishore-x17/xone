@@ -47,6 +47,10 @@ export interface XoneAudioPlugin {
   }): Promise<{ deleted?: boolean; videoId?: string }>;
   openDownloadsFolder(): Promise<{ opened: boolean }>;
   setVolume(options: { volume: number }): Promise<void>;
+  setAudioEffects(options: {
+    eightD: boolean;
+    slowedReverb: boolean;
+  }): Promise<{ eightD: boolean; slowedReverb: boolean }>;
   addListener(
     eventName: "playbackState",
     listenerFunc: (event: NativePlaybackStateEvent) => void

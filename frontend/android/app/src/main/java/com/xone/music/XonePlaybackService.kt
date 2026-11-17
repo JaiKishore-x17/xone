@@ -7,19 +7,25 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.os.Handler
+import android.os.Looper
 import android.provider.MediaStore
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
+import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.audio.AudioSink
+import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
@@ -29,12 +35,59 @@ import java.io.IOException
 @OptIn(UnstableApi::class)
 class XonePlaybackService : MediaSessionService() {
 
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val effectsProcessor = XoneAudioEffectsProcessor()
+
+    @Volatile
+    private var eightDEnabled = false
+
+    @Volatile
+    private var srEnabled = false
+
     private var player: ExoPlayer? = null
     private var mediaSession: MediaSession? = null
     private var lastRetriedVideoId: String? = null
 
+    fun setEightDEnabled(enabled: Boolean) {
+        val effective = if (XoneBleJamManager.isJamActive()) false else enabled
+        eightDEnabled = effective
+        effectsProcessor.eightDEnabled = effective
+    }
+
+    fun setSlowedReverbEnabled(enabled: Boolean) {
+        val effective = if (XoneBleJamManager.isJamActive()) false else enabled
+        srEnabled = effective
+        effectsProcessor.srEnabled = effective
+        val targetParams = if (effective) {
+            PlaybackParameters(0.84f, 0.88f)
+        } else {
+            PlaybackParameters(1.0f, 1.0f)
+        }
+        applyPlaybackParameters(targetParams)
+    }
+
+    fun resetAudioEffects() {
+        eightDEnabled = false
+        srEnabled = false
+        effectsProcessor.eightDEnabled = false
+        effectsProcessor.srEnabled = false
+        effectsProcessor.clearState()
+        applyPlaybackParameters(PlaybackParameters(1.0f, 1.0f))
+    }
+
+    private fun applyPlaybackParameters(params: PlaybackParameters) {
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            player?.playbackParameters = params
+        } else {
+            mainHandler.post {
+                player?.playbackParameters = params
+            }
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
+        instance = this
         OkHttpDownloader.ensureInitialized()
 
         val httpDataSourceFactory = DefaultHttpDataSource.Factory()
@@ -72,7 +125,22 @@ class XonePlaybackService : MediaSessionService() {
             .setBufferDurationsMs(15_000, 50_000, 250, 500)
             .build()
 
+        val renderersFactory = object : DefaultRenderersFactory(this) {
+            override fun buildAudioSink(
+                context: Context,
+                enableFloatOutput: Boolean,
+                enableAudioTrackPlaybackParams: Boolean
+            ): AudioSink {
+                return DefaultAudioSink.Builder(context)
+                    .setEnableFloatOutput(false)
+                    .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
+                    .setAudioProcessors(arrayOf(effectsProcessor))
+                    .build()
+            }
+        }
+
         val exoPlayer = ExoPlayer.Builder(this)
+            .setRenderersFactory(renderersFactory)
             .setLoadControl(loadControl)
             .setMediaSourceFactory(DefaultMediaSourceFactory(resolvingDataSourceFactory))
             .setAudioAttributes(audioAttributes, true)
@@ -138,6 +206,11 @@ class XonePlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        if (instance === this) {
+            instance = null
+        }
+        effectsProcessor.eightDEnabled = false
+        effectsProcessor.srEnabled = false
         mediaSession?.run {
             player.release()
             release()
@@ -148,6 +221,10 @@ class XonePlaybackService : MediaSessionService() {
     }
 
     companion object {
+        @Volatile
+        var instance: XonePlaybackService? = null
+            private set
+
         const val XONE_SCHEME = "xone"
         const val OFFLINE_PUBLIC_SUBDIR = "Xone"
         const val LEGACY_OFFLINE_DIR = "offline_tracks"

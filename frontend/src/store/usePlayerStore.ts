@@ -1,4 +1,6 @@
 import { create } from "zustand";
+import { Capacitor } from "@capacitor/core";
+import { XoneAudio } from "../plugins/xoneAudio";
 import * as api from "../services/musicApi";
 import {
   EMPTY_JAM_STATE,
@@ -12,6 +14,11 @@ import {
   setSpeakerDevices as jamSetSpeakersApi,
 } from "../services/xoneJam";
 import type { ActiveView, Playlist, RepeatMode, SearchResponse, Track } from "../types";
+
+function syncNativeAudioEffects(eightD: boolean, slowedReverb: boolean): void {
+  if (!Capacitor.isNativePlatform()) return;
+  void XoneAudio.setAudioEffects({ eightD, slowedReverb }).catch(() => {});
+}
 
 const VOLUME_STORAGE_KEY = "xone_volume";
 
@@ -70,6 +77,8 @@ interface PlayerState {
   autoplayRadio: boolean;
   isFetchingRadio: boolean;
   radioSeedVideoId: string | null;
+  eightDEnabled: boolean;
+  srEnabled: boolean;
 
   // Navigation & Search
   activeView: ActiveView;
@@ -117,6 +126,8 @@ interface PlayerState {
   setStreamStats: (stats: { cached: boolean; resolutionMs: number } | null) => void;
   setPlaybackError: (err: string | null) => void;
   toggleAutoplayRadio: () => void;
+  toggleEightD: () => void;
+  toggleSlowedReverb: () => void;
   fetchAndAppendRadio: (seedVideoId: string, replaceUpcoming: boolean) => Promise<Track[]>;
   syncTrackFromNative: (track: Track) => void;
 
@@ -177,6 +188,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   autoplayRadio: true,
   isFetchingRadio: false,
   radioSeedVideoId: null,
+  eightDEnabled: false,
+  srEnabled: false,
 
   activeView: { type: "home" },
   history: [{ type: "home" }],
@@ -235,6 +248,9 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
           ? jamQueue.findIndex((t) => t.video_id === activeId)
           : -1;
 
+      if (get().eightDEnabled || get().srEnabled) {
+        syncNativeAudioEffects(false, false);
+      }
       set({
         jamState: normalized,
         queue: jamQueue,
@@ -243,6 +259,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         isFetchingRadio: false,
         prefetchedVideoId: null,
         repeat: "all",
+        eightDEnabled: false,
+        srEnabled: false,
         ...(normalized.currentTrack
           ? {
               currentTrack: normalized.currentTrack,
@@ -279,7 +297,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
   startJamSession: async (deviceName) => {
     if (get().isJamBusy) return;
-    set({ isJamBusy: true });
+    set({ isJamBusy: true, eightDEnabled: false, srEnabled: false });
+    syncNativeAudioEffects(false, false);
     try {
       const next = await jamCreateApi(deviceName);
       get().setJamState(next);
@@ -296,7 +315,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
   joinJamSession: async (code, deviceName) => {
     if (get().isJamBusy) return;
-    set({ isJamBusy: true });
+    set({ isJamBusy: true, eightDEnabled: false, srEnabled: false });
+    syncNativeAudioEffects(false, false);
     try {
       const next = await jamJoinApi({ code, deviceName });
       get().setJamState(next);
@@ -375,6 +395,30 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     get().showToast(
       nextEnabled ? "Autoplay Radio enabled" : "Autoplay Radio paused"
     );
+  },
+
+  toggleEightD: () => {
+    const state = get();
+    if (state.jamState.active) {
+      state.showToast("Audio effects are disabled during a Jam");
+      return;
+    }
+    const next = !state.eightDEnabled;
+    set({ eightDEnabled: next });
+    syncNativeAudioEffects(next, state.srEnabled);
+    state.showToast(next ? "8D Spatial Audio ON" : "8D Spatial Audio OFF");
+  },
+
+  toggleSlowedReverb: () => {
+    const state = get();
+    if (state.jamState.active) {
+      state.showToast("Audio effects are disabled during a Jam");
+      return;
+    }
+    const next = !state.srEnabled;
+    set({ srEnabled: next });
+    syncNativeAudioEffects(state.eightDEnabled, next);
+    state.showToast(next ? "Slowed + Reverb ON" : "Slowed + Reverb OFF");
   },
 
   fetchAndAppendRadio: async (seedVideoId, replaceUpcoming) => {
