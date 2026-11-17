@@ -14,7 +14,6 @@ const NativeAudioController: React.FC = () => {
   const seekRequest = usePlayerStore((s) => s.seekRequest);
   const jamActive = usePlayerStore((s) => s.jamState.active);
   const jamRole = usePlayerStore((s) => s.jamState.role);
-  const jamQueue = usePlayerStore((s) => s.jamState.jamQueue);
   const jamActiveSpeakers = usePlayerStore((s) => s.jamState.activeSpeakers);
   const jamLocalDeviceId = usePlayerStore((s) => s.jamState.localDeviceId);
 
@@ -103,7 +102,8 @@ const NativeAudioController: React.FC = () => {
 
   // Load new track when currentTrack changes from React UI
   useEffect(() => {
-    if (jamActive && jamRole === "guest") {
+    const store = usePlayerStore.getState();
+    if (jamActive || store.jamState.active) {
       return;
     }
 
@@ -117,15 +117,6 @@ const NativeAudioController: React.FC = () => {
 
     if (skipNextPlayCallForRef.current === currentTrack.video_id) {
       skipNextPlayCallForRef.current = null;
-      return;
-    }
-
-    const store = usePlayerStore.getState();
-    if (
-      store.jamState.active &&
-      store.jamState.role === "host" &&
-      store.jamState.currentTrack?.video_id === currentTrack.video_id
-    ) {
       return;
     }
 
@@ -168,26 +159,24 @@ const NativeAudioController: React.FC = () => {
 
   // Keep native ExoPlayer queue synchronized for gapless background & lock-screen skips
   useEffect(() => {
-    if (jamActive && jamRole === "guest") {
+    if (jamActive || usePlayerStore.getState().jamState.active) {
       return;
     }
 
-    const effectiveTracks =
-      jamActive && jamRole === "host" ? jamQueue : queue;
-    if (!currentTrack || effectiveTracks.length === 0) return;
+    if (!currentTrack || queue.length === 0) return;
 
     const safeStart =
-      !jamActive && queueIndex >= 0 && queueIndex < effectiveTracks.length
+      queueIndex >= 0 && queueIndex < queue.length
         ? queueIndex
         : Math.max(
             0,
-            effectiveTracks.findIndex((t) => t.video_id === currentTrack.video_id)
+            queue.findIndex((t) => t.video_id === currentTrack.video_id)
           );
 
     const payload = {
-      tracks: effectiveTracks.map(toNativeTrackPayload),
+      tracks: queue.map(toNativeTrackPayload),
       startIndex: safeStart,
-      repeatMode: jamActive ? "all" : repeat,
+      repeatMode: repeat,
     };
 
     void XoneAudio.setQueue(payload).catch(() => {
@@ -199,8 +188,6 @@ const NativeAudioController: React.FC = () => {
     repeat,
     currentTrack?.video_id,
     jamActive,
-    jamRole,
-    jamQueue,
   ]);
 
   // Synchronize play/pause toggles from React UI

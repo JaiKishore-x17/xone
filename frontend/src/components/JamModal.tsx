@@ -4,6 +4,7 @@ import {
   Check,
   Copy,
   Loader2,
+  Lock,
   Music2,
   Play,
   Plus,
@@ -38,6 +39,7 @@ export const JamModal: React.FC = () => {
   const leaveJamSession = usePlayerStore((s) => s.leaveJamSession);
   const addTrackToJamSession = usePlayerStore((s) => s.addTrackToJamSession);
   const setJamSpeakerDevices = usePlayerStore((s) => s.setJamSpeakerDevices);
+  const setJamMultiSpeakerMode = usePlayerStore((s) => s.setJamMultiSpeakerMode);
   const playTrack = usePlayerStore((s) => s.playTrack);
   const showToast = usePlayerStore((s) => s.showToast);
 
@@ -185,6 +187,9 @@ export const JamModal: React.FC = () => {
   };
 
   const handleToggleSpeaker = (deviceAddress: string) => {
+    if (!jamState.isMultiSpeakerMode && deviceAddress !== "HOST") {
+      return;
+    }
     const currentSet = new Set(jamState.activeSpeakers);
     if (currentSet.has(deviceAddress)) {
       currentSet.delete(deviceAddress);
@@ -474,27 +479,58 @@ export const JamModal: React.FC = () => {
 
                 {/* Audio Output Speakers Section */}
                 <div>
-                  <div className="flex items-center justify-between mb-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
                     <p className="text-xs font-bold uppercase tracking-wider text-[#B3B3B3]">
                       Audio Output Speakers ({jamState.activeSpeakers.length}/
                       {jamState.participants.length})
                     </p>
-                    <span className="text-[11px] text-[#727272]">
-                      Tap to toggle audio
-                    </span>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={jamState.isMultiSpeakerMode}
+                      onClick={() =>
+                        void setJamMultiSpeakerMode(!jamState.isMultiSpeakerMode)
+                      }
+                      className="flex items-center gap-2 text-left"
+                    >
+                      <span className="text-[11px] font-semibold text-[#B3B3B3]">
+                        Multi-Speaker Mode
+                      </span>
+                      <span
+                        className={`w-10 h-5 rounded-full p-0.5 transition-colors flex items-center shrink-0 ${
+                          jamState.isMultiSpeakerMode
+                            ? "bg-[#FF5E4D]"
+                            : "bg-[#1E1E1E] border border-white/10"
+                        }`}
+                      >
+                        <span
+                          className={`w-4 h-4 rounded-full bg-black shadow transition-transform ${
+                            jamState.isMultiSpeakerMode
+                              ? "translate-x-5"
+                              : "translate-x-0"
+                          }`}
+                        />
+                      </span>
+                    </button>
                   </div>
 
                   <div className="space-y-1.5">
                     {jamState.participants.map((p) => {
-                      const enabled = p.isSpeakerEnabled;
+                      const isGuestLocked = !jamState.isMultiSpeakerMode && !p.isHost;
+                      const enabled = isGuestLocked ? false : p.isSpeakerEnabled;
                       return (
                         <button
                           key={p.deviceAddress}
                           type="button"
                           role="switch"
                           aria-checked={enabled}
+                          disabled={isGuestLocked}
                           onClick={() => handleToggleSpeaker(p.deviceAddress)}
-                          className="w-full min-h-[52px] px-3.5 py-2.5 rounded-xl bg-[#000000] border border-white/10 hover:border-[#FF5E4D]/40 flex items-center justify-between gap-3 text-left transition-colors"
+                          className={`w-full min-h-[52px] px-3.5 py-2.5 rounded-xl bg-[#000000] border border-white/10 flex items-center justify-between gap-3 text-left transition-colors ${
+                            isGuestLocked
+                              ? "opacity-50 cursor-not-allowed"
+                              : "hover:border-[#FF5E4D]/40"
+                          }`}
                         >
                           <div className="flex items-center gap-3 min-w-0">
                             <div
@@ -504,7 +540,9 @@ export const JamModal: React.FC = () => {
                                   : "bg-[#1E1E1E] text-[#727272]"
                               }`}
                             >
-                              {enabled ? (
+                              {isGuestLocked ? (
+                                <Lock size={16} />
+                              ) : enabled ? (
                                 <Volume2 size={17} />
                               ) : (
                                 <VolumeX size={17} />
@@ -520,7 +558,9 @@ export const JamModal: React.FC = () => {
                                 )}
                               </p>
                               <p className="text-[11px] text-[#B3B3B3] truncate">
-                                {enabled
+                                {isGuestLocked
+                                  ? "Enable Multi-Speaker Mode to unlock"
+                                  : enabled
                                   ? "Streaming audio in sync"
                                   : "Muted (control & queue only)"}
                               </p>
@@ -622,18 +662,20 @@ export const JamModal: React.FC = () => {
                   <div className="flex flex-wrap items-center gap-2">
                     <span
                       className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold ${
-                        isLocalSpeakerEnabled
+                        jamState.isMultiSpeakerMode && isLocalSpeakerEnabled
                           ? "bg-[#FF5E4D] text-black"
                           : "bg-[#1E1E1E] text-[#B3B3B3]"
                       }`}
                     >
-                      {isLocalSpeakerEnabled ? (
+                      {jamState.isMultiSpeakerMode && isLocalSpeakerEnabled ? (
                         <Volume2 size={13} />
                       ) : (
                         <VolumeX size={13} />
                       )}
                       <span>
-                        {isLocalSpeakerEnabled
+                        {!jamState.isMultiSpeakerMode
+                          ? "Host Speaker Only"
+                          : isLocalSpeakerEnabled
                           ? "Speaker Active"
                           : "Muted by Host"}
                       </span>

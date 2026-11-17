@@ -140,6 +140,34 @@ class XoneJamPlugin : Plugin(), XoneBleJamManager.Listener {
     }
 
     @PluginMethod
+    fun setMultiSpeakerMode(call: PluginCall) {
+        val enabled = call.getBoolean("enabled") ?: false
+        jamManager.setMultiSpeakerMode(enabled) { result ->
+            result.onSuccess {
+                call.resolve()
+            }.onFailure { err ->
+                call.reject(err.localizedMessage ?: "Failed to toggle Multi-Speaker Mode", Exception(err))
+            }
+        }
+    }
+
+    @PluginMethod
+    fun playJamTrack(call: PluginCall) {
+        val videoId = call.getString("videoId")?.trim().orEmpty()
+        if (videoId.isEmpty()) {
+            call.reject("videoId is required")
+            return
+        }
+        jamManager.playJamTrackById(videoId) { result ->
+            result.onSuccess {
+                call.resolve()
+            }.onFailure { err ->
+                call.reject(err.localizedMessage ?: "Failed to switch Jam track", Exception(err))
+            }
+        }
+    }
+
+    @PluginMethod
     fun getJamState(call: PluginCall) {
         call.resolve(jamManager.getJamStateJS())
     }

@@ -7,6 +7,8 @@ import {
   createJam as jamCreateApi,
   joinJam as jamJoinApi,
   leaveJam as jamLeaveApi,
+  playJamTrack as jamPlayTrackApi,
+  setMultiSpeakerMode as jamSetMultiSpeakerModeApi,
   setSpeakerDevices as jamSetSpeakersApi,
 } from "../services/xoneJam";
 import type { ActiveView, Playlist, RepeatMode, SearchResponse, Track } from "../types";
@@ -148,6 +150,7 @@ interface PlayerState {
   leaveJamSession: () => Promise<void>;
   addTrackToJamSession: (track: Track) => Promise<void>;
   setJamSpeakerDevices: (deviceIds: string[]) => Promise<void>;
+  setJamMultiSpeakerMode: (enabled: boolean) => Promise<void>;
   showToast: (msg: string) => void;
 }
 
@@ -222,9 +225,15 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       const jamQueue = normalized.jamQueue ?? [];
       const activeId =
         normalized.currentTrack?.video_id ?? get().currentTrack?.video_id ?? null;
-      const foundIdx = activeId
-        ? jamQueue.findIndex((t) => t.video_id === activeId)
-        : -1;
+      const reportedIdx = normalized.currentTrackIndex;
+      const foundIdx =
+        reportedIdx >= 0 &&
+        reportedIdx < jamQueue.length &&
+        (!activeId || jamQueue[reportedIdx]?.video_id === activeId)
+          ? reportedIdx
+          : activeId
+          ? jamQueue.findIndex((t) => t.video_id === activeId)
+          : -1;
 
       set({
         jamState: normalized,
@@ -246,10 +255,25 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       return;
     }
 
-    const wasActive = get().jamState.active;
+    const prevJam = get().jamState;
+    const wasActive = prevJam.active;
+    const wasGuest = wasActive && prevJam.role === "guest";
     set({
       jamState: normalized,
       ...(wasActive ? { repeat: "off", isFetchingRadio: false } : {}),
+      ...(wasGuest
+        ? {
+            isPlaying: false,
+            isBuffering: false,
+            currentTrack: null,
+            queue: [],
+            originalQueue: [],
+            queueIndex: -1,
+            currentTime: 0,
+            duration: 0,
+            playbackError: null,
+          }
+        : {}),
     });
   },
 
@@ -318,6 +342,16 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     } catch (err) {
       get().showToast(
         err instanceof Error ? err.message : "Failed to update speakers"
+      );
+    }
+  },
+
+  setJamMultiSpeakerMode: async (enabled) => {
+    try {
+      await jamSetMultiSpeakerModeApi(enabled);
+    } catch (err) {
+      get().showToast(
+        err instanceof Error ? err.message : "Failed to update Multi-Speaker Mode"
       );
     }
   },
@@ -422,6 +456,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
           playbackError: null,
           repeat: "all",
         });
+        void jamPlayTrackApi(selected.video_id);
         return;
       }
 
@@ -599,6 +634,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         prefetchedVideoId: null,
         playbackError: null,
       });
+      void jamPlayTrackApi(nextTrack.video_id);
       return;
     }
 
@@ -697,6 +733,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         prefetchedVideoId: null,
         playbackError: null,
       });
+      void jamPlayTrackApi(prevTrack.video_id);
       return;
     }
 

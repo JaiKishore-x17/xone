@@ -20,6 +20,9 @@ export interface JamState {
   localDeviceId: string;
   localDeviceName: string;
   clockOffsetMs: number;
+  isMultiSpeakerMode: boolean;
+  currentTrackIndex: number;
+  currentVideoId: string;
   participants: JamParticipant[];
   jamQueue: JamQueueTrack[];
   activeSpeakers: string[];
@@ -36,6 +39,9 @@ export const EMPTY_JAM_STATE: JamState = {
   localDeviceId: "HOST",
   localDeviceName: "",
   clockOffsetMs: 0,
+  isMultiSpeakerMode: false,
+  currentTrackIndex: -1,
+  currentVideoId: "",
   participants: [],
   jamQueue: [],
   activeSpeakers: [],
@@ -46,15 +52,20 @@ export const EMPTY_JAM_STATE: JamState = {
 
 function normalizeJamState(raw?: Partial<JamState> | null): JamState {
   const isActive = Boolean(raw?.active ?? raw?.isActive ?? false);
+  const currentTrack = raw?.currentTrack ?? null;
   return {
     ...EMPTY_JAM_STATE,
     ...(raw ?? {}),
     active: isActive,
     isActive,
+    isMultiSpeakerMode: Boolean(raw?.isMultiSpeakerMode ?? false),
+    currentTrackIndex:
+      typeof raw?.currentTrackIndex === "number" ? raw.currentTrackIndex : -1,
+    currentVideoId: raw?.currentVideoId ?? currentTrack?.video_id ?? "",
     participants: raw?.participants ?? [],
     jamQueue: raw?.jamQueue ?? [],
     activeSpeakers: raw?.activeSpeakers ?? [],
-    currentTrack: raw?.currentTrack ?? null,
+    currentTrack,
   };
 }
 
@@ -73,6 +84,8 @@ interface XoneJamPlugin {
     addedBy?: string;
   }): Promise<void>;
   setSpeakerDevices(options: { deviceIds: string[] }): Promise<void>;
+  setMultiSpeakerMode(options: { enabled: boolean }): Promise<void>;
+  playJamTrack(options: { videoId: string }): Promise<void>;
   getJamState(): Promise<JamState>;
   addListener(
     eventName: "jamStateUpdated",
@@ -141,6 +154,16 @@ export async function addTrackToJam(
 export async function setSpeakerDevices(deviceIds: string[]): Promise<void> {
   requireNativeJam();
   await XoneJamNative.setSpeakerDevices({ deviceIds });
+}
+
+export async function setMultiSpeakerMode(enabled: boolean): Promise<void> {
+  requireNativeJam();
+  await XoneJamNative.setMultiSpeakerMode({ enabled });
+}
+
+export async function playJamTrack(videoId: string): Promise<void> {
+  requireNativeJam();
+  await XoneJamNative.playJamTrack({ videoId });
 }
 
 export async function getJamState(): Promise<JamState> {

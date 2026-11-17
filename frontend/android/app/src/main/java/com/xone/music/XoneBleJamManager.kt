@@ -44,6 +44,7 @@ import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
@@ -263,10 +264,22 @@ class XoneBleJamManager private constructor(private val appContext: Context) {
     private var currentTrack: JamTrack? = null
 
     @Volatile
+    private var currentTrackIndex = -1
+
+    @Volatile
+    private var currentVideoId = ""
+
+    @Volatile
+    private var isMultiSpeakerMode = false
+
+    @Volatile
     private var jamIsPlaying = false
 
     @Volatile
     private var jamPositionMs = 0L
+
+    @Volatile
+    private var isEndingJam = false
 
     private val participants = LinkedHashMap<String, JamParticipant>()
     private val jamQueue = ArrayList<JamTrack>()
@@ -332,15 +345,20 @@ class XoneBleJamManager private constructor(private val appContext: Context) {
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             if (!isActive || role != ROLE_HOST) return
             if (SystemClock.elapsedRealtime() < suppressHostPlayerEventsUntilMs) return
+            if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED) return
             val item = mediaItem ?: return
             val parsed = JamTrack.fromMediaItem(item, localDeviceName) ?: return
 
             synchronized(stateLock) {
-                val existing = jamQueue.firstOrNull { it.videoId == parsed.videoId }
-                val chosen = existing ?: parsed.also {
-                    jamQueue.add(it)
+                var idx = jamQueue.indexOfFirst { it.videoId == parsed.videoId }
+                if (idx < 0) {
+                    jamQueue.add(parsed)
                     if (jamQueue.size > MAX_QUEUE_TRACKS) jamQueue.removeAt(0)
+                    idx = jamQueue.lastIndex
                 }
+                val chosen = jamQueue[idx]
+                currentTrackIndex = idx
+                currentVideoId = chosen.videoId
                 currentTrack = chosen
                 jamPositionMs = 0L
                 jamIsPlaying = mediaController?.playWhenReady ?: true
@@ -363,18 +381,17 @@ class XoneBleJamManager private constructor(private val appContext: Context) {
             }
 
             if (playbackState != Player.STATE_ENDED) return
-            val ctrl = mediaController ?: return
             val firstTrack = synchronized(stateLock) { jamQueue.firstOrNull() } ?: return
 
             synchronized(stateLock) {
+                currentTrackIndex = 0
+                currentVideoId = firstTrack.videoId
                 currentTrack = firstTrack
                 jamPositionMs = 0L
                 jamIsPlaying = true
             }
 
-            broadcastStateSyncToAll()
-            coordinateHostSyncPlay(fromTrackTransition = true, forcePlaying = true)
-            emitStateToUi()
+            playJamTrackAtIndex(0)
         }
 
         override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
@@ -469,10 +486,12 @@ class XoneBleJamManager private constructor(private val appContext: Context) {
                 synchronized(stateLock) {
                     role = ROLE_HOST
                     isActive = true
+                    isEndingJam = false
                     jamCode = code
                     localDeviceName = cleanName
                     localDeviceId = HOST_DEVICE_ID
                     clockOffsetMs = 0L
+                    isMultiSpeakerMode = false
                     participants.clear()
                     participants[HOST_DEVICE_ID] = JamParticipant(
                         deviceAddress = HOST_DEVICE_ID,
@@ -482,6 +501,8 @@ class XoneBleJamManager private constructor(private val appContext: Context) {
                     )
                     jamQueue.clear()
                     currentTrack = null
+                    currentTrackIndex = -1
+                    currentVideoId = ""
                     jamIsPlaying = false
                     jamPositionMs = 0L
                 }
@@ -512,12 +533,14 @@ class XoneBleJamManager private constructor(private val appContext: Context) {
                         val seedTrack = JamTrack.fromMediaItem(curItem, cleanName)
                         if (seedTrack != null) {
                             synchronized(stateLock) {
-                                currentTrack = seedTrack
-                                jamIsPlaying = ctrl.isPlaying || ctrl.playWhenReady
-                                jamPositionMs = ctrl.currentPosition.coerceAtLeast(0L)
                                 if (jamQueue.none { it.videoId == seedTrack.videoId }) {
                                     jamQueue.add(seedTrack)
                                 }
+                                currentTrackIndex = 0
+                                currentVideoId = seedTrack.videoId
+                                currentTrack = seedTrack
+                                jamIsPlaying = ctrl.isPlaying || ctrl.playWhenReady
+                                jamPositionMs = ctrl.currentPosition.coerceAtLeast(0L)
                             }
                         }
                     } else {
@@ -577,7 +600,27 @@ class XoneBleJamManager private constructor(private val appContext: Context) {
 
     fun leaveJam(reason: String = "Left Jam session") {
         mainHandler.post {
-            cleanupInternal(emitEnded = true, reason = reason)
+            if (isEndingJam) return@post
+            val shouldNotifyGuests = isActive && role == ROLE_HOST && subscribedGuests.isNotEmpty()
+            if (shouldNotifyGuests) {
+                isEndingJam = true
+                val endPayload = JSONObject().apply {
+                    put("type", MSG_JAM_ENDED)
+                    put("reason", "HOST_ENDED")
+                }
+                for (addr in subscribedGuests) {
+                    val dev = connectedGuests[addr] ?: continue
+                    enqueueHostNotification(dev, endPayload)
+                }
+                scope.launch(Dispatchers.IO) {
+                    delay(HOST_END_FLUSH_DELAY_MS)
+                    mainHandler.post {
+                        cleanupInternal(emitEnded = true, reason = reason)
+                    }
+                }
+            } else {
+                cleanupInternal(emitEnded = true, reason = reason)
+            }
         }
     }
 
@@ -586,8 +629,9 @@ class XoneBleJamManager private constructor(private val appContext: Context) {
             val partsArr = JSArray()
             val speakersArr = JSArray()
             for (p in participants.values) {
-                partsArr.put(p.toJSObject())
-                if (p.isSpeakerEnabled) {
+                val effectiveSpeaker = if (isMultiSpeakerMode) p.isSpeakerEnabled else p.isHost
+                partsArr.put(p.copy(isSpeakerEnabled = effectiveSpeaker).toJSObject())
+                if (effectiveSpeaker) {
                     speakersArr.put(p.deviceAddress)
                 }
             }
@@ -605,6 +649,9 @@ class XoneBleJamManager private constructor(private val appContext: Context) {
                 put("localDeviceId", localDeviceId)
                 put("localDeviceName", localDeviceName)
                 put("clockOffsetMs", clockOffsetMs)
+                put("isMultiSpeakerMode", isMultiSpeakerMode)
+                put("currentTrackIndex", currentTrackIndex)
+                put("currentVideoId", currentVideoId)
                 put("participants", partsArr)
                 put("jamQueue", queueArr)
                 put("activeSpeakers", speakersArr)
@@ -656,6 +703,22 @@ class XoneBleJamManager private constructor(private val appContext: Context) {
                 callback(Result.failure(IllegalStateException("Only the Jam Host can select speakers.")))
                 return@post
             }
+            if (!isMultiSpeakerMode) {
+                // In Host-Only mode, keep only the Host speaker active
+                synchronized(stateLock) {
+                    val updated = LinkedHashMap<String, JamParticipant>()
+                    for ((key, p) in participants) {
+                        updated[key] = p.copy(isSpeakerEnabled = p.isHost)
+                    }
+                    participants.clear()
+                    participants.putAll(updated)
+                }
+                mediaController?.let { it.volume = 1.0f }
+                broadcastStateSyncToAll()
+                emitStateToUi()
+                callback(Result.success(Unit))
+                return@post
+            }
 
             val prevSpeakers = getActiveSpeakerIds().toHashSet()
             val selectedSet = deviceIds.toHashSet()
@@ -678,6 +741,135 @@ class XoneBleJamManager private constructor(private val appContext: Context) {
             coordinateSpeakerChangeSyncPlay(resyncBarrier = addedGuestSpeaker)
             emitStateToUi()
             callback(Result.success(Unit))
+        }
+    }
+
+    fun setMultiSpeakerMode(enabled: Boolean, callback: (Result<Unit>) -> Unit) {
+        mainHandler.post {
+            if (!isActive || role != ROLE_HOST) {
+                callback(Result.failure(IllegalStateException("Only the Jam Host can toggle Multi-Speaker Mode.")))
+                return@post
+            }
+
+            synchronized(stateLock) {
+                isMultiSpeakerMode = enabled
+                val updated = LinkedHashMap<String, JamParticipant>()
+                for ((key, p) in participants) {
+                    updated[key] = p.copy(
+                        isSpeakerEnabled = if (enabled) true else p.isHost
+                    )
+                }
+                participants.clear()
+                participants.putAll(updated)
+            }
+
+            if (!enabled) {
+                // Revert cleanly to Host-only playback without pausing the Host
+                ++barrierGen
+                barrierDispatched = true
+                barrierVideoId = ""
+                barrierTimeoutRunnable?.let { mainHandler.removeCallbacks(it) }
+                barrierTimeoutRunnable = null
+                hostStageRunnable?.let { mainHandler.removeCallbacks(it) }
+                hostStageRunnable = null
+
+                mediaController?.let { ctrl ->
+                    ctrl.playbackParameters = PlaybackParameters.DEFAULT
+                    ctrl.volume = 1.0f
+                }
+
+                broadcastStateSyncToAll()
+                val ct = currentTrack
+                if (ct != null) {
+                    sendPrepareTrackBroadcast(
+                        track = ct,
+                        positionMs = mediaController?.currentPosition?.coerceAtLeast(0L) ?: jamPositionMs,
+                        activeSpeakers = listOf(HOST_DEVICE_ID),
+                        isPlaying = false
+                    )
+                }
+                emitStateToUi()
+                callback(Result.success(Unit))
+                return@post
+            }
+
+            broadcastStateSyncToAll()
+            val ctrl = mediaController
+            if (ctrl != null && currentTrack != null && (ctrl.isPlaying || ctrl.playWhenReady)) {
+                coordinateHostSyncPlay(fromTrackTransition = false, forcePlaying = true)
+            }
+            emitStateToUi()
+            callback(Result.success(Unit))
+        }
+    }
+
+    fun playJamTrackById(videoId: String, callback: (Result<Unit>) -> Unit) {
+        val cleanId = videoId.trim()
+        if (cleanId.isEmpty()) {
+            callback(Result.failure(IllegalArgumentException("videoId is required")))
+            return
+        }
+        mainHandler.post {
+            if (!isActive || role != ROLE_HOST) {
+                callback(Result.failure(IllegalStateException("Only the Jam Host can control playback.")))
+                return@post
+            }
+            val targetIdx = synchronized(stateLock) {
+                jamQueue.indexOfFirst { it.videoId == cleanId }
+            }
+            if (targetIdx < 0) {
+                callback(Result.failure(IllegalStateException("Track not found in Jam queue.")))
+                return@post
+            }
+            playJamTrackAtIndex(targetIdx)
+            callback(Result.success(Unit))
+        }
+    }
+
+    private fun playJamTrackAtIndex(index: Int) {
+        if (!isActive || role != ROLE_HOST) return
+        val queueSnapshot: List<JamTrack>
+        val selectedTrack: JamTrack
+        synchronized(stateLock) {
+            if (index !in jamQueue.indices) return
+            selectedTrack = jamQueue[index]
+            currentTrackIndex = index
+            currentVideoId = selectedTrack.videoId
+            currentTrack = selectedTrack
+            jamPositionMs = 0L
+            jamIsPlaying = true
+            queueSnapshot = ArrayList(jamQueue)
+        }
+
+        ensureController { ctrl ->
+            ctrl.repeatMode = Player.REPEAT_MODE_ALL
+            val items = queueSnapshot.map { it.toMediaItem() }
+            val existingIds = (0 until ctrl.mediaItemCount).map { ctrl.getMediaItemAt(it).mediaId }
+            val expectedIds = queueSnapshot.map { it.videoId }
+
+            suppressHostPlayerEventsUntilMs = SystemClock.elapsedRealtime() + 900L
+            if (existingIds != expectedIds) {
+                ctrl.setMediaItems(items, index, 0L)
+            } else {
+                ctrl.seekTo(index, 0L)
+            }
+
+            val speakers = getActiveSpeakerIds()
+            val hasActiveGuests = isMultiSpeakerMode && subscribedGuests.any { it in speakers }
+
+            if (!hasActiveGuests) {
+                ctrl.volume = if (HOST_DEVICE_ID in speakers) 1.0f else 0.0f
+                ctrl.playWhenReady = true
+                ctrl.prepare()
+                ctrl.play()
+                broadcastStateSyncToAll()
+            } else {
+                ctrl.playWhenReady = false
+                ctrl.prepare()
+                broadcastStateSyncToAll()
+                coordinateHostSyncPlay(fromTrackTransition = true, forcePlaying = true)
+            }
+            emitStateToUi()
         }
     }
 
@@ -884,7 +1076,11 @@ class XoneBleJamManager private constructor(private val appContext: Context) {
                 subscribedGuests.add(addr)
 
                 synchronized(stateLock) {
-                    val prevEnabled = participants[addr]?.isSpeakerEnabled ?: true
+                    val prevEnabled = if (isMultiSpeakerMode) {
+                        participants[addr]?.isSpeakerEnabled ?: false
+                    } else {
+                        false
+                    }
                     participants[addr] = JamParticipant(
                         deviceAddress = addr,
                         deviceName = guestName,
@@ -902,7 +1098,7 @@ class XoneBleJamManager private constructor(private val appContext: Context) {
 
                 mainHandler.post {
                     broadcastStateSyncToAll()
-                    if (currentTrack != null) {
+                    if (currentTrack != null && isMultiSpeakerMode) {
                         coordinateSpeakerChangeSyncPlay(resyncBarrier = jamIsPlaying)
                     }
                     emitStateToUi()
@@ -933,21 +1129,25 @@ class XoneBleJamManager private constructor(private val appContext: Context) {
     private fun handleAddTrackOnHost(jamTrack: JamTrack) {
         if (!isActive || role != ROLE_HOST) return
 
-        val shouldStartNow: Boolean
-        val queueSnapshot: List<JamTrack>
+        val wasEmpty: Boolean
+        val targetIdx: Int
         synchronized(stateLock) {
-            val wasEmpty = jamQueue.isEmpty() || currentTrack == null
-            if (jamQueue.none { it.videoId == jamTrack.videoId }) {
+            wasEmpty = jamQueue.isEmpty() || currentTrack == null
+            val existingIdx = jamQueue.indexOfFirst { it.videoId == jamTrack.videoId }
+            if (existingIdx < 0) {
                 jamQueue.add(jamTrack)
                 if (jamQueue.size > MAX_QUEUE_TRACKS) jamQueue.removeAt(0)
+                targetIdx = jamQueue.lastIndex
+            } else {
+                targetIdx = existingIdx
             }
-            shouldStartNow = wasEmpty
-            if (shouldStartNow) {
+            if (wasEmpty) {
+                currentTrackIndex = targetIdx
+                currentVideoId = jamTrack.videoId
                 currentTrack = jamTrack
                 jamIsPlaying = true
                 jamPositionMs = 0L
             }
-            queueSnapshot = ArrayList(jamQueue)
         }
 
         ensureController { ctrl ->
@@ -958,26 +1158,20 @@ class XoneBleJamManager private constructor(private val appContext: Context) {
                     ctrl.playbackState == Player.STATE_IDLE ||
                     ctrl.playbackState == Player.STATE_ENDED
 
-            if (shouldStartNow || playerIdle) {
-                val items = queueSnapshot.map { it.toMediaItem() }
-                val startIdx = queueSnapshot.indexOfFirst { it.videoId == jamTrack.videoId }
-                    .coerceAtLeast(0)
-                suppressHostPlayerEventsUntilMs = SystemClock.elapsedRealtime() + 800L
-                ctrl.setMediaItems(items, startIdx, 0L)
-                ctrl.playWhenReady = subscribedGuests.isEmpty()
-                ctrl.prepare()
-                broadcastStateSyncToAll()
-                coordinateHostSyncPlay(fromTrackTransition = true, forcePlaying = true)
+            if (wasEmpty || playerIdle) {
+                playJamTrackAtIndex(targetIdx)
             } else {
+                // Append cleanly without pausing or interrupting the active playing track
                 val alreadyInPlayer = (0 until ctrl.mediaItemCount).any {
                     ctrl.getMediaItemAt(it).mediaId == jamTrack.videoId
                 }
                 if (!alreadyInPlayer) {
+                    suppressHostPlayerEventsUntilMs = SystemClock.elapsedRealtime() + 500L
                     ctrl.addMediaItem(mediaItem)
                 }
                 broadcastStateSyncToAll()
+                emitStateToUi()
             }
-            emitStateToUi()
         }
     }
 
@@ -986,8 +1180,9 @@ class XoneBleJamManager private constructor(private val appContext: Context) {
             val partsArr = JSONArray()
             val speakersArr = JSONArray()
             for (p in participants.values) {
-                partsArr.put(p.toJson())
-                if (p.isSpeakerEnabled) {
+                val effectiveSpeaker = if (isMultiSpeakerMode) p.isSpeakerEnabled else p.isHost
+                partsArr.put(p.copy(isSpeakerEnabled = effectiveSpeaker).toJson())
+                if (effectiveSpeaker) {
                     speakersArr.put(p.deviceAddress)
                 }
             }
@@ -999,6 +1194,9 @@ class XoneBleJamManager private constructor(private val appContext: Context) {
             return JSONObject().apply {
                 put("type", MSG_STATE_SYNC)
                 put("jamCode", jamCode)
+                put("isMultiSpeakerMode", isMultiSpeakerMode)
+                put("currentTrackIndex", currentTrackIndex)
+                put("currentVideoId", currentVideoId)
                 put("participants", partsArr)
                 put("jamQueue", queueArr)
                 put("activeSpeakers", speakersArr)
@@ -1051,11 +1249,15 @@ class XoneBleJamManager private constructor(private val appContext: Context) {
                 jamPositionMs = rawPos
             }
             ctrl.volume = if (hostSpeakerActive) 1.0f else 0.0f
-            sendPrepareTrackBroadcast(track, rawPos, speakers, isPlaying = false)
+            broadcastStateSyncToAll()
+            if (isMultiSpeakerMode && hasGuests) {
+                sendPrepareTrackBroadcast(track, rawPos, speakers, isPlaying = false)
+            }
             return
         }
 
-        if (!hasGuests) {
+        // Bypass 2-phase barrier in Host-Only default mode or when no guest speakers are active
+        if (!isMultiSpeakerMode || activeGuestSpeakers.isEmpty()) {
             ++barrierGen
             barrierDispatched = true
             barrierVideoId = ""
@@ -1065,6 +1267,7 @@ class XoneBleJamManager private constructor(private val appContext: Context) {
                 ctrl.prepare()
                 ctrl.play()
             }
+            broadcastStateSyncToAll()
             return
         }
 
@@ -1216,13 +1419,17 @@ class XoneBleJamManager private constructor(private val appContext: Context) {
                     val hostNow = SystemClock.elapsedRealtime()
                     val curPos = ctrl.currentPosition.coerceAtLeast(0L)
                     synchronized(stateLock) { jamPositionMs = curPos }
-                    sendHeartbeatBroadcast(
-                        track = track,
-                        hostTimeMs = hostNow,
-                        positionMs = curPos,
-                        isPlaying = true,
-                        activeSpeakers = getActiveSpeakerIds()
-                    )
+                    if (isMultiSpeakerMode && getActiveSpeakerIds().any { it != HOST_DEVICE_ID }) {
+                        sendHeartbeatBroadcast(
+                            track = track,
+                            hostTimeMs = hostNow,
+                            positionMs = curPos,
+                            isPlaying = true,
+                            activeSpeakers = getActiveSpeakerIds()
+                        )
+                    } else {
+                        broadcastStateSyncToAll()
+                    }
                     emitStateToUi()
                 }
                 mainHandler.postDelayed(this, HOST_HEARTBEAT_INTERVAL_MS)
@@ -1282,6 +1489,9 @@ class XoneBleJamManager private constructor(private val appContext: Context) {
 
     private fun getActiveSpeakerIds(): List<String> {
         synchronized(stateLock) {
+            if (!isMultiSpeakerMode) {
+                return listOf(HOST_DEVICE_ID)
+            }
             return participants.values.filter { it.isSpeakerEnabled }.map { it.deviceAddress }
         }
     }
@@ -1439,7 +1649,12 @@ class XoneBleJamManager private constructor(private val appContext: Context) {
                 mainHandler.post {
                     val pending = pendingJoinCallback
                     pendingJoinCallback = null
-                    cleanupInternal(emitEnded = true, reason = "Disconnected from Jam Host")
+                    val reasonMsg = if (isActive && role == ROLE_GUEST) {
+                        "Host ended the Jam"
+                    } else {
+                        "Disconnected from Jam Host"
+                    }
+                    cleanupInternal(emitEnded = true, reason = reasonMsg)
                     pending?.invoke(Result.failure(IllegalStateException("Disconnected from Host")))
                 }
             }
@@ -1532,6 +1747,11 @@ class XoneBleJamManager private constructor(private val appContext: Context) {
             MSG_PREPARE_TRACK -> handleGuestPrepareTrack(obj)
             MSG_GO_PLAY -> handleGuestGoPlay(obj)
             MSG_HEARTBEAT -> handleGuestHeartbeat(obj)
+            MSG_JAM_ENDED -> {
+                mainHandler.post {
+                    cleanupInternal(emitEnded = true, reason = "Host ended the Jam")
+                }
+            }
         }
     }
 
@@ -1631,6 +1851,7 @@ class XoneBleJamManager private constructor(private val appContext: Context) {
 
         synchronized(stateLock) {
             isActive = true
+            isMultiSpeakerMode = obj.optBoolean("isMultiSpeakerMode", isMultiSpeakerMode)
             if (partsJson != null) {
                 participants.clear()
                 for (i in 0 until partsJson.length()) {
@@ -1641,7 +1862,7 @@ class XoneBleJamManager private constructor(private val appContext: Context) {
                             deviceAddress = addr,
                             deviceName = item.optString("deviceName", "Device"),
                             isHost = item.optBoolean("isHost", false),
-                            isSpeakerEnabled = item.optBoolean("isSpeakerEnabled", true)
+                            isSpeakerEnabled = item.optBoolean("isSpeakerEnabled", false)
                         )
                     }
                 }
@@ -1653,7 +1874,23 @@ class XoneBleJamManager private constructor(private val appContext: Context) {
                     JamTrack.fromJson(item)?.let { jamQueue.add(it) }
                 }
             }
-            trackJson?.let { JamTrack.fromJson(it)?.let { parsed -> currentTrack = parsed } }
+            val parsedTrack = trackJson?.let { JamTrack.fromJson(it) }
+            if (parsedTrack != null) {
+                currentTrack = parsedTrack
+                currentVideoId = parsedTrack.videoId
+            } else {
+                val vid = obj.optCleanString("currentVideoId")
+                if (vid.isNotEmpty()) {
+                    currentVideoId = vid
+                    currentTrack = jamQueue.firstOrNull { it.videoId == vid } ?: currentTrack
+                }
+            }
+            val incomingIdx = obj.optInt("currentTrackIndex", -1)
+            currentTrackIndex = if (incomingIdx >= 0) {
+                incomingIdx
+            } else {
+                jamQueue.indexOfFirst { it.videoId == currentVideoId }
+            }
             jamIsPlaying = obj.optBoolean("isPlaying", jamIsPlaying)
             jamPositionMs = obj.optLong("positionMs", jamPositionMs)
         }
@@ -1666,11 +1903,15 @@ class XoneBleJamManager private constructor(private val appContext: Context) {
                 pendingJoinCallback = null
                 pending.invoke(Result.success(getJamStateJS()))
             }
-            if (localDeviceId !in getActiveSpeakerIds()) {
+            if (!isMultiSpeakerMode || localDeviceId !in getActiveSpeakerIds()) {
+                cancelGuestSyncRunnables()
                 mediaController?.let { ctrl ->
                     ctrl.playbackParameters = PlaybackParameters.DEFAULT
                     ctrl.volume = 0.0f
+                    ctrl.playWhenReady = false
                     ctrl.pause()
+                    ctrl.stop()
+                    ctrl.clearMediaItems()
                 }
             }
             emitStateToUi()
@@ -1724,6 +1965,8 @@ class XoneBleJamManager private constructor(private val appContext: Context) {
 
         synchronized(stateLock) {
             currentTrack = track
+            currentVideoId = track.videoId
+            currentTrackIndex = jamQueue.indexOfFirst { it.videoId == track.videoId }
             jamIsPlaying = shouldPlay
             jamPositionMs = positionMs
             updateParticipantsSpeakerState(activeSpeakers)
@@ -1731,7 +1974,7 @@ class XoneBleJamManager private constructor(private val appContext: Context) {
 
         emitStateToUi()
 
-        val isThisPhoneSpeaker = localDeviceId in activeSpeakers
+        val isThisPhoneSpeaker = isMultiSpeakerMode && (localDeviceId in activeSpeakers)
 
         mainHandler.post {
             val gen = ++syncGeneration
@@ -1746,13 +1989,16 @@ class XoneBleJamManager private constructor(private val appContext: Context) {
                     ctrl.volume = if (isThisPhoneSpeaker) 1.0f else 0.0f
                     ctrl.playWhenReady = false
                     ctrl.pause()
-                    if (abs(ctrl.currentPosition - positionMs) > 25L) {
+                    if (!isThisPhoneSpeaker) {
+                        ctrl.stop()
+                        ctrl.clearMediaItems()
+                    } else if (abs(ctrl.currentPosition - positionMs) > 25L) {
                         ctrl.seekTo(positionMs)
                     }
                     return@ensureController
                 }
 
-                // Step 1: Pre-resolve stream URL (if not offline) and buffer ExoPlayer to STATE_READY with playWhenReady = false
+                // Step 1: Pre-resolve stream URL (if not offline) and cleanly load + buffer new MediaItem to STATE_READY
                 scope.launch {
                     if (XonePlaybackService.findOfflineTrackUri(appContext, track.videoId) == null) {
                         runCatching { XoneExtractor.resolveAudioStream(track.videoId) }
@@ -1763,14 +2009,13 @@ class XoneBleJamManager private constructor(private val appContext: Context) {
 
                         clearGuestReadyListener(ctrl)
                         val mediaItem = track.toMediaItem()
-                        if (ctrl.currentMediaItem?.mediaId != track.videoId) {
-                            ctrl.setMediaItem(mediaItem)
-                        }
                         ctrl.playbackParameters = PlaybackParameters.DEFAULT
                         ctrl.volume = 1.0f
                         ctrl.playWhenReady = false
-                        ctrl.pause()
-                        if (abs(ctrl.currentPosition - positionMs) > 15L) {
+                        ctrl.stop()
+                        ctrl.clearMediaItems()
+                        ctrl.setMediaItem(mediaItem)
+                        if (positionMs > 0L) {
                             ctrl.seekTo(positionMs)
                         }
                         ctrl.prepare()
@@ -1807,11 +2052,19 @@ class XoneBleJamManager private constructor(private val appContext: Context) {
         val positionMs = obj.optLong("positionMs", 0L).coerceAtLeast(0L)
         if (videoId.isEmpty() || targetHostTimeMs <= 0L) return
 
-        val isThisPhoneSpeaker = synchronized(stateLock) {
+        val matchedTrack = synchronized(stateLock) {
+            val found = jamQueue.firstOrNull { it.videoId == videoId }
+                ?: currentTrack?.takeIf { it.videoId == videoId }
+            if (found != null) {
+                currentTrack = found
+                currentVideoId = found.videoId
+                currentTrackIndex = jamQueue.indexOfFirst { it.videoId == videoId }
+            }
             jamIsPlaying = true
             jamPositionMs = positionMs
-            localDeviceId in getActiveSpeakerIds()
+            found
         }
+        val isThisPhoneSpeaker = isMultiSpeakerMode && (localDeviceId in getActiveSpeakerIds())
         emitStateToUi()
 
         if (!isThisPhoneSpeaker) return
@@ -1824,15 +2077,12 @@ class XoneBleJamManager private constructor(private val appContext: Context) {
                 if (gen != syncGeneration || !isActive) return@ensureController
                 clearGuestReadyListener(ctrl)
 
-                if (ctrl.currentMediaItem?.mediaId != videoId) {
-                    val track = synchronized(stateLock) {
-                        currentTrack?.takeIf { it.videoId == videoId }
-                            ?: jamQueue.firstOrNull { it.videoId == videoId }
-                    }
-                    if (track != null) {
-                        ctrl.setMediaItem(track.toMediaItem())
-                        ctrl.prepare()
-                    }
+                if (ctrl.currentMediaItem?.mediaId != videoId && matchedTrack != null) {
+                    // Self-healing track mismatch fallback before precision launch
+                    ctrl.stop()
+                    ctrl.clearMediaItems()
+                    ctrl.setMediaItem(matchedTrack.toMediaItem())
+                    ctrl.prepare()
                 }
 
                 ctrl.volume = 1.0f
@@ -1854,8 +2104,8 @@ class XoneBleJamManager private constructor(private val appContext: Context) {
         val trackObj = obj.optJSONObject("track")
         val track = trackObj?.let { JamTrack.fromJson(it) }
             ?: synchronized(stateLock) {
-                currentTrack?.takeIf { it.videoId == videoId }
-                    ?: jamQueue.firstOrNull { it.videoId == videoId }
+                jamQueue.firstOrNull { it.videoId == videoId }
+                    ?: currentTrack?.takeIf { it.videoId == videoId }
             }
         val hostTimeMs = obj.optLong("hostTimeMs", 0L)
         val positionMs = obj.optLong("positionMs", 0L).coerceAtLeast(0L)
@@ -1863,14 +2113,18 @@ class XoneBleJamManager private constructor(private val appContext: Context) {
         val activeSpeakers = parseActiveSpeakers(obj)
 
         synchronized(stateLock) {
-            if (track != null) currentTrack = track
+            if (track != null) {
+                currentTrack = track
+                currentVideoId = track.videoId
+                currentTrackIndex = jamQueue.indexOfFirst { it.videoId == track.videoId }
+            }
             jamIsPlaying = isPlaying
             jamPositionMs = positionMs
             updateParticipantsSpeakerState(activeSpeakers)
         }
         emitStateToUi()
 
-        val isThisPhoneSpeaker = localDeviceId in activeSpeakers
+        val isThisPhoneSpeaker = isMultiSpeakerMode && (localDeviceId in activeSpeakers)
 
         mainHandler.post {
             ensureController { ctrl ->
@@ -1883,6 +2137,10 @@ class XoneBleJamManager private constructor(private val appContext: Context) {
                     ctrl.volume = if (isThisPhoneSpeaker) 1.0f else 0.0f
                     ctrl.playWhenReady = false
                     ctrl.pause()
+                    if (!isThisPhoneSpeaker) {
+                        ctrl.stop()
+                        ctrl.clearMediaItems()
+                    }
                     return@ensureController
                 }
 
@@ -1896,8 +2154,10 @@ class XoneBleJamManager private constructor(private val appContext: Context) {
                     positionMs
                 }
 
-                // Recover if guest joined mid-track or missed PREPARE_TRACK
+                // Self-healing fallback: immediately load & play new videoId if Guest missed PREPARE_TRACK / GO_PLAY
                 if (videoId.isNotEmpty() && ctrl.currentMediaItem?.mediaId != videoId && track != null) {
+                    ctrl.stop()
+                    ctrl.clearMediaItems()
                     ctrl.setMediaItem(track.toMediaItem())
                     ctrl.volume = 1.0f
                     ctrl.seekTo(expectedPosMs)
@@ -2195,10 +2455,18 @@ class XoneBleJamManager private constructor(private val appContext: Context) {
         cancelGuestSyncRunnables()
         ++syncGeneration
 
+        val wasGuest = role == ROLE_GUEST
+
         mediaController?.removeListener(hostPlayerListener)
         mediaController?.let { ctrl ->
             ctrl.repeatMode = Player.REPEAT_MODE_OFF
             ctrl.playbackParameters = PlaybackParameters.DEFAULT
+            if (wasGuest) {
+                ctrl.playWhenReady = false
+                ctrl.pause()
+                ctrl.stop()
+                ctrl.clearMediaItems()
+            }
             if (ctrl.volume < 0.99f) {
                 ctrl.volume = 1.0f
             }
@@ -2236,13 +2504,17 @@ class XoneBleJamManager private constructor(private val appContext: Context) {
 
         synchronized(stateLock) {
             isActive = false
+            isEndingJam = false
             role = ROLE_NONE
             jamCode = ""
             localDeviceId = HOST_DEVICE_ID
             clockOffsetMs = 0L
+            isMultiSpeakerMode = false
             participants.clear()
             jamQueue.clear()
             currentTrack = null
+            currentTrackIndex = -1
+            currentVideoId = ""
             jamIsPlaying = false
             jamPositionMs = 0L
         }
@@ -2277,6 +2549,7 @@ class XoneBleJamManager private constructor(private val appContext: Context) {
         private const val PING_BURST_SPACING_MS = 90L
         private const val MAX_ACCEPTABLE_RTT_MS = 120L
         private const val HOST_HEARTBEAT_INTERVAL_MS = 3_000L
+        private const val HOST_END_FLUSH_DELAY_MS = 250L
         private const val NUDGE_MIN_DRIFT_MS = 35L
         private const val NUDGE_MAX_DRIFT_MS = 350L
         private const val NUDGE_FAST_SPEED = 1.04f
@@ -2296,6 +2569,7 @@ class XoneBleJamManager private constructor(private val appContext: Context) {
         private const val MSG_GUEST_READY = "GUEST_READY"
         private const val MSG_GO_PLAY = "GO_PLAY"
         private const val MSG_HEARTBEAT = "HEARTBEAT"
+        private const val MSG_JAM_ENDED = "JAM_ENDED"
 
         @Volatile
         private var instance: XoneBleJamManager? = null
