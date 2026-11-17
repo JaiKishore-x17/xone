@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   ChevronLeft,
   ChevronRight,
@@ -9,6 +9,7 @@ import {
   X,
 } from "lucide-react";
 import { usePlayerStore } from "../store/usePlayerStore";
+import { AboutModal } from "./AboutModal";
 import { XoneLogo } from "./XoneLogo";
 
 export const TopBar: React.FC = () => {
@@ -28,6 +29,7 @@ export const TopBar: React.FC = () => {
 
   const debounceRef = useRef<number | null>(null);
   const lastSearchedRef = useRef<string>("");
+  const [isAboutOpen, setIsAboutOpen] = useState(false);
 
   // 350ms debounced instant search
   useEffect(() => {
@@ -66,17 +68,19 @@ export const TopBar: React.FC = () => {
   };
 
   return (
-    <header className="sticky top-0 z-30 h-[calc(4rem+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)] px-3 md:px-6 flex items-center justify-between gap-2 md:gap-4 bg-[#000000]/90 backdrop-blur-md border-b border-white/[0.04]">
-      {/* Left: Mobile Logo + History Navigation + Instant Debounced Search */}
-      <div className="flex items-center gap-2 md:gap-3 flex-1 min-w-0 max-w-2xl">
-        <button
-          type="button"
-          onClick={() => navigate({ type: "home" })}
-          aria-label="Xone Home"
-          className="flex md:hidden min-w-[44px] min-h-[44px] items-center justify-center shrink-0"
-        >
-          <XoneLogo size={28} />
-        </button>
+    <>
+      <header className="sticky top-0 z-30 h-[calc(4rem+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)] px-3 md:px-6 flex items-center justify-between gap-2 md:gap-4 bg-[#000000]/90 backdrop-blur-md border-b border-white/[0.04]">
+        {/* Left: Mobile Logo + History Navigation + Instant Debounced Search */}
+        <div className="flex items-center gap-2 md:gap-3 flex-1 min-w-0 max-w-2xl">
+          <button
+            type="button"
+            onClick={() => setIsAboutOpen(true)}
+            aria-label="About Xone"
+            title="About Xone"
+            className="flex md:hidden min-w-[44px] min-h-[44px] items-center justify-center shrink-0 cursor-pointer active:scale-95 transition-transform"
+          >
+            <XoneLogo size={28} />
+          </button>
 
         <div className="flex items-center gap-2 shrink-0">
           <button
@@ -180,5 +184,8 @@ export const TopBar: React.FC = () => {
         </button>
       </div>
     </header>
+
+      <AboutModal isOpen={isAboutOpen} onClose={() => setIsAboutOpen(false)} />
+    </>
   );
 };
