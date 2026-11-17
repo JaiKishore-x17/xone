@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import {
   Clock3,
   Download,
+  FolderOpen,
   Heart,
   ListMusic,
   Loader2,
@@ -50,6 +51,7 @@ export const MainView: React.FC = () => {
   const reorderPlaylistTracks = usePlayerStore((s) => s.reorderPlaylistTracks);
   const removeFromQueue = usePlayerStore((s) => s.removeFromQueue);
   const clearUpcomingQueue = usePlayerStore((s) => s.clearUpcomingQueue);
+  const openDownloadsFolder = usePlayerStore((s) => s.openDownloadsFolder);
   const setNewPlaylistModalOpen = usePlayerStore(
     (s) => s.setNewPlaylistModalOpen
   );
@@ -60,6 +62,20 @@ export const MainView: React.FC = () => {
   // Drag & drop state for playlist reordering
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+
+  const renderOpenFolderButton = (compact = false) => (
+    <button
+      type="button"
+      onClick={() => void openDownloadsFolder()}
+      aria-label="Open Music/Xone folder"
+      className={`${
+        compact ? "min-h-[40px] px-3.5" : "min-h-[44px] px-4 py-2"
+      } rounded-full bg-[#181818] border border-white/10 text-white hover:border-[#FF5E4D] text-xs font-bold flex items-center gap-1.5 transition-colors shrink-0`}
+    >
+      <FolderOpen size={compact ? 14 : 16} className="text-[#FF5E4D]" />
+      <span className={compact ? "hidden sm:inline" : undefined}>Open Folder</span>
+    </button>
+  );
 
   const renderPlayableListHeader = () => (
     <div className="hidden md:grid grid-cols-[36px_minmax(0,2.2fr)_minmax(0,1.2fr)_168px] items-center gap-3 px-3 py-2 border-b border-white/10 text-xs font-semibold uppercase tracking-wider text-[#B3B3B3] mb-1">
@@ -230,18 +246,22 @@ export const MainView: React.FC = () => {
                 </div>
               </button>
 
-              {downloadedTracks.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() =>
-                    playTrack(downloadedTracks[0], downloadedTracks)
-                  }
-                  className="min-h-[40px] px-4 rounded-full bg-[#FF5E4D] hover:bg-[#FF7466] text-black text-xs font-bold flex items-center gap-1.5 transition-colors shrink-0"
-                >
-                  <Play size={14} className="fill-black" />
-                  <span>Play All</span>
-                </button>
-              )}
+              <div className="flex items-center gap-2 shrink-0">
+                {renderOpenFolderButton(true)}
+
+                {downloadedTracks.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      playTrack(downloadedTracks[0], downloadedTracks)
+                    }
+                    className="min-h-[40px] px-4 rounded-full bg-[#FF5E4D] hover:bg-[#FF7466] text-black text-xs font-bold flex items-center gap-1.5 transition-colors shrink-0"
+                  >
+                    <Play size={14} className="fill-black" />
+                    <span>Play All</span>
+                  </button>
+                )}
+              </div>
             </div>
 
             {downloadedTracks.length > 0 && (
@@ -603,7 +623,7 @@ export const MainView: React.FC = () => {
         </div>
 
         {/* Action Bar */}
-        <div className="px-4 md:px-6 py-3 md:py-4 flex items-center justify-center md:justify-start gap-5">
+        <div className="px-4 md:px-6 py-3 md:py-4 flex flex-wrap items-center justify-center md:justify-start gap-3 md:gap-4">
           <button
             type="button"
             disabled={tracks.length === 0}
@@ -629,6 +649,8 @@ export const MainView: React.FC = () => {
             )}
             {isDownloadsView && <span>Play All</span>}
           </button>
+
+          {isDownloadsView && renderOpenFolderButton(false)}
 
           <button
             type="button"

@@ -1564,8 +1564,7 @@ class XoneBleJamManager private constructor(private val appContext: Context) {
 
                 // Pre-resolve audio stream on Guest's own internet (or verify local offline file) before scheduling play
                 scope.launch {
-                    val offlineFile = File(appContext.filesDir, "offline_tracks/${track.videoId}.audio")
-                    if (!offlineFile.exists() || offlineFile.length() == 0L) {
+                    if (XonePlaybackService.findOfflineTrackUri(appContext, track.videoId) == null) {
                         runCatching { XoneExtractor.resolveAudioStream(track.videoId) }
                     }
 

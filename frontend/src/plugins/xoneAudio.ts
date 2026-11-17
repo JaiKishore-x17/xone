@@ -39,10 +39,13 @@ export interface XoneAudioPlugin {
   }): Promise<{ tracks: Track[] }>;
   downloadTrack(options: {
     videoId: string;
+    title?: string;
+    artist?: string;
   }): Promise<{ localPath: string; sizeBytes: number }>;
   deleteDownload(options: {
     videoId: string;
   }): Promise<{ deleted?: boolean; videoId?: string }>;
+  openDownloadsFolder(): Promise<{ opened: boolean }>;
   setVolume(options: { volume: number }): Promise<void>;
   addListener(
     eventName: "playbackState",

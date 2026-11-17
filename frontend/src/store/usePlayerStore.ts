@@ -132,6 +132,7 @@ interface PlayerState {
   downloadTrack: (track: Track) => Promise<void>;
   removeDownload: (videoId: string) => Promise<void>;
   toggleDownload: (track: Track) => Promise<void>;
+  openDownloadsFolder: () => Promise<void>;
   createPlaylist: (name: string, description: string, coverColor: string) => Promise<Playlist>;
   deletePlaylist: (playlistId: number) => Promise<void>;
   addTrackToPlaylist: (playlistId: number, track: Track) => Promise<void>;
@@ -1062,6 +1063,16 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       await get().removeDownload(vid);
     } else {
       await get().downloadTrack(track);
+    }
+  },
+
+  openDownloadsFolder: async () => {
+    try {
+      await api.openDownloadsFolder();
+    } catch (err) {
+      get().showToast(
+        err instanceof Error ? err.message : "Unable to open Music/Xone folder"
+      );
     }
   },
 

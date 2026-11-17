@@ -200,7 +200,11 @@ export async function toggleLikeTrack(
 
 export async function downloadTrack(track: Track): Promise<Track> {
   if (isNativePlatform()) {
-    await XoneAudio.downloadTrack({ videoId: track.video_id });
+    await XoneAudio.downloadTrack({
+      videoId: track.id || track.video_id,
+      title: track.title,
+      artist: track.artist,
+    });
   }
   return localLibrary.saveDownloadedTrack(track);
 }
@@ -218,4 +222,11 @@ export async function removeDownload(videoId: string): Promise<void> {
 
 export async function getDownloadedTracks(): Promise<Track[]> {
   return localLibrary.getDownloadedTracks();
+}
+
+export async function openDownloadsFolder(): Promise<void> {
+  if (!isNativePlatform()) {
+    throw new Error("Offline Music/Xone folder is available on Android.");
+  }
+  await XoneAudio.openDownloadsFolder();
 }

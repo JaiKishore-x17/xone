@@ -1,10 +1,19 @@
 package com.xone.music
 
+import android.app.DownloadManager
+import android.content.ActivityNotFoundException
 import android.content.ComponentName
+import android.content.ContentValues
+import android.content.Intent
+import android.media.MediaScannerConnection
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.os.Environment
 import android.os.Handler
 import android.os.Looper
+import android.provider.DocumentsContract
+import android.provider.MediaStore
 import androidx.core.content.ContextCompat
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -485,56 +494,84 @@ class XoneAudioPlugin : Plugin() {
 
     @PluginMethod
     fun downloadTrack(call: PluginCall) {
-        val videoId = sanitizeVideoId(call.getString("videoId"))
+        val videoId = XonePlaybackService.sanitizeVideoId(call.getString("videoId"))
         if (videoId.isEmpty()) {
             call.reject("videoId is required")
             return
         }
+        val title = call.getString("title")?.trim().orEmpty()
+        val artist = call.getString("artist")?.trim().orEmpty()
 
         pluginScope.launch(Dispatchers.IO) {
-            val offlineDir = File(context.filesDir, OFFLINE_TRACKS_DIR)
-            val targetFile = File(offlineDir, "$videoId.audio")
-            val tempFile = File(offlineDir, "$videoId.audio.tmp")
-
             try {
-                if (!offlineDir.exists() && !offlineDir.mkdirs()) {
-                    throw IOException("Failed to create offline storage directory")
-                }
-
-                if (targetFile.exists() && targetFile.length() > 0L) {
+                // Already downloaded in public Music/Xone
+                val existingPublic = XonePlaybackService.findPublicOfflineTrackUri(context, videoId)
+                if (existingPublic != null) {
+                    val size = XonePlaybackService.getOfflineUriSize(context, existingPublic)
                     call.resolve(
                         JSObject().apply {
-                            put("localPath", targetFile.absolutePath)
-                            put("sizeBytes", targetFile.length())
+                            put("localPath", existingPublic.toString())
+                            put("sizeBytes", size)
                         }
                     )
                     return@launch
                 }
 
-                downloadStreamChunkedToTempFile(videoId, tempFile)
-
-                if (!tempFile.exists() || tempFile.length() <= 0L) {
-                    throw IOException("Downloaded audio stream is empty")
+                // Migrate legacy internal file into public Music/Xone if present
+                val legacyFile = XonePlaybackService.findLegacyOfflineFile(context, videoId)
+                if (legacyFile != null) {
+                    val (legacyExt, legacyMime) = sniffLegacyContainer(legacyFile)
+                    val legacyName = buildSafeDownloadFileName(videoId, title, artist, legacyExt)
+                    val (migratedPath, migratedSize) = writeStreamToPublicMusicXone(
+                        videoId = videoId,
+                        fileName = legacyName,
+                        mimeType = legacyMime,
+                        title = title,
+                        artist = artist
+                    ) { onChunk ->
+                        var total = 0L
+                        legacyFile.inputStream().use { input ->
+                            val buf = ByteArray(64 * 1024)
+                            while (true) {
+                                val read = input.read(buf)
+                                if (read == -1) break
+                                onChunk(buf.copyOfRange(0, read))
+                                total += read
+                            }
+                        }
+                        total
+                    }
+                    legacyFile.delete()
+                    call.resolve(
+                        JSObject().apply {
+                            put("localPath", migratedPath)
+                            put("sizeBytes", migratedSize)
+                        }
+                    )
+                    return@launch
                 }
 
-                if (targetFile.exists()) {
-                    targetFile.delete()
-                }
-                if (!tempFile.renameTo(targetFile)) {
-                    tempFile.copyTo(targetFile, overwrite = true)
-                    tempFile.delete()
+                val resolved = XoneExtractor.resolveAudioStream(videoId)
+                val (ext, mimeType) = resolveContainerFormat(resolved)
+                val fileName = buildSafeDownloadFileName(videoId, title, artist, ext)
+
+                val (savedPath, savedSize) = writeStreamToPublicMusicXone(
+                    videoId = videoId,
+                    fileName = fileName,
+                    mimeType = mimeType,
+                    title = title,
+                    artist = artist
+                ) { onChunk ->
+                    downloadStreamChunked(videoId, resolved.streamUrl, onChunk)
                 }
 
                 call.resolve(
                     JSObject().apply {
-                        put("localPath", targetFile.absolutePath)
-                        put("sizeBytes", targetFile.length())
+                        put("localPath", savedPath)
+                        put("sizeBytes", savedSize)
                     }
                 )
             } catch (ex: Exception) {
-                if (tempFile.exists()) {
-                    tempFile.delete()
-                }
                 call.reject(ex.localizedMessage ?: "Failed to download track", ex)
             }
         }
@@ -542,7 +579,7 @@ class XoneAudioPlugin : Plugin() {
 
     @PluginMethod
     fun deleteDownload(call: PluginCall) {
-        val videoId = sanitizeVideoId(call.getString("videoId"))
+        val videoId = XonePlaybackService.sanitizeVideoId(call.getString("videoId"))
         if (videoId.isEmpty()) {
             call.reject("videoId is required")
             return
@@ -550,16 +587,45 @@ class XoneAudioPlugin : Plugin() {
 
         pluginScope.launch(Dispatchers.IO) {
             try {
-                val offlineDir = File(context.filesDir, OFFLINE_TRACKS_DIR)
-                val targetFile = File(offlineDir, "$videoId.audio")
-                val tempFile = File(offlineDir, "$videoId.audio.tmp")
                 var deleted = false
-                if (targetFile.exists()) {
-                    deleted = targetFile.delete()
+
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    val where =
+                        "${MediaStore.Audio.Media.RELATIVE_PATH} LIKE ? AND " +
+                            "(${MediaStore.Audio.Media.DISPLAY_NAME} LIKE ? OR ${MediaStore.Audio.Media.DISPLAY_NAME} LIKE ?)"
+                    val args = arrayOf("%Music/Xone%", "%[$videoId]%", "$videoId.%")
+                    val rows = runCatching {
+                        context.contentResolver.delete(
+                            MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                            where,
+                            args
+                        )
+                    }.getOrDefault(0)
+                    if (rows > 0) deleted = true
                 }
-                if (tempFile.exists()) {
-                    tempFile.delete()
+
+                val publicDir = XonePlaybackService.getPublicMusicXoneDir()
+                if (publicDir.exists() && publicDir.isDirectory) {
+                    publicDir.listFiles()?.forEach { file ->
+                        if (
+                            file.isFile &&
+                            (file.name.contains("[$videoId]") || file.name.startsWith("$videoId."))
+                        ) {
+                            if (file.delete()) deleted = true
+                        }
+                    }
                 }
+
+                val offlineDir = File(context.filesDir, OFFLINE_TRACKS_DIR)
+                val legacyFile = File(offlineDir, "$videoId.audio")
+                val legacyTemp = File(offlineDir, "$videoId.audio.tmp")
+                if (legacyFile.exists() && legacyFile.delete()) {
+                    deleted = true
+                }
+                if (legacyTemp.exists()) {
+                    legacyTemp.delete()
+                }
+
                 call.resolve(
                     JSObject().apply {
                         put("deleted", deleted)
@@ -572,14 +638,246 @@ class XoneAudioPlugin : Plugin() {
         }
     }
 
+    @PluginMethod
+    fun openDownloadsFolder(call: PluginCall) {
+        mainHandler.post {
+            val hostActivity = activity
+            if (hostActivity == null) {
+                call.reject("Activity unavailable")
+                return@post
+            }
+
+            runCatching {
+                val publicDir = XonePlaybackService.getPublicMusicXoneDir()
+                if (!publicDir.exists()) {
+                    publicDir.mkdirs()
+                }
+            }
+
+            val candidates = listOf(
+                Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(
+                        DocumentsContract.buildDocumentUri(
+                            "com.android.externalstorage.documents",
+                            "primary:Music/Xone"
+                        ),
+                        DocumentsContract.Document.MIME_TYPE_DIR
+                    )
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                },
+                Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(
+                        DocumentsContract.buildDocumentUri(
+                            "com.android.externalstorage.documents",
+                            "primary:Music"
+                        ),
+                        DocumentsContract.Document.MIME_TYPE_DIR
+                    )
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                },
+                Intent(Intent.ACTION_VIEW).apply {
+                    data = DocumentsContract.buildRootUri(
+                        "com.android.externalstorage.documents",
+                        "primary"
+                    )
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                },
+                Intent(DownloadManager.ACTION_VIEW_DOWNLOADS).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+            )
+
+            for (intent in candidates) {
+                try {
+                    hostActivity.startActivity(intent)
+                    call.resolve(JSObject().put("opened", true))
+                    return@post
+                } catch (_: ActivityNotFoundException) {
+                    // try next file manager fallback
+                } catch (_: SecurityException) {
+                    // OEM blocked direct documents URI -> try next fallback
+                } catch (_: Exception) {
+                    // try next fallback
+                }
+            }
+
+            call.reject("Unable to open the Music/Xone folder on this device")
+        }
+    }
+
+    private suspend fun writeStreamToPublicMusicXone(
+        videoId: String,
+        fileName: String,
+        mimeType: String,
+        title: String,
+        artist: String,
+        streamProducer: suspend ((ByteArray) -> Unit) -> Long
+    ): Pair<String, Long> {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val resolver = context.contentResolver
+            // Clean up any stale pending rows for this videoId before inserting
+            runCatching {
+                resolver.delete(
+                    MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                    "${MediaStore.Audio.Media.RELATIVE_PATH} LIKE ? AND " +
+                        "${MediaStore.Audio.Media.DISPLAY_NAME} LIKE ? AND " +
+                        "${MediaStore.Audio.Media.IS_PENDING} = 1",
+                    arrayOf("%Music/Xone%", "%[$videoId]%")
+                )
+            }
+
+            val values = ContentValues().apply {
+                put(MediaStore.Audio.Media.DISPLAY_NAME, fileName)
+                put(MediaStore.Audio.Media.MIME_TYPE, mimeType)
+                put(
+                    MediaStore.Audio.Media.RELATIVE_PATH,
+                    "${Environment.DIRECTORY_MUSIC}/${XonePlaybackService.OFFLINE_PUBLIC_SUBDIR}"
+                )
+                put(MediaStore.Audio.Media.IS_MUSIC, 1)
+                put(MediaStore.Audio.Media.IS_PENDING, 1)
+                if (title.isNotEmpty()) put(MediaStore.Audio.Media.TITLE, title)
+                if (artist.isNotEmpty()) put(MediaStore.Audio.Media.ARTIST, artist)
+            }
+
+            val itemUri = resolver.insert(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, values)
+                ?: throw IOException("Failed to create MediaStore audio entry in Music/Xone")
+
+            try {
+                var writtenBytes = 0L
+                val outputStream = resolver.openOutputStream(itemUri, "w")
+                    ?: throw IOException("Failed to open output stream for $itemUri")
+
+                outputStream.use { out ->
+                    writtenBytes = streamProducer { chunk ->
+                        out.write(chunk)
+                        out.flush()
+                    }
+                }
+
+                if (writtenBytes <= 0L) {
+                    throw IOException("Downloaded audio stream is empty")
+                }
+
+                val finishValues = ContentValues().apply {
+                    put(MediaStore.Audio.Media.IS_PENDING, 0)
+                    put(MediaStore.Audio.Media.SIZE, writtenBytes)
+                }
+                resolver.update(itemUri, finishValues, null, null)
+                return itemUri.toString() to writtenBytes
+            } catch (ex: Exception) {
+                runCatching { resolver.delete(itemUri, null, null) }
+                throw ex
+            }
+        } else {
+            val publicDir = XonePlaybackService.getPublicMusicXoneDir()
+            if (!publicDir.exists() && !publicDir.mkdirs()) {
+                throw IOException("Failed to create public Music/Xone directory")
+            }
+
+            val targetFile = File(publicDir, fileName)
+            val tempFile = File(publicDir, "$fileName.tmp")
+            if (tempFile.exists()) tempFile.delete()
+
+            try {
+                val writtenBytes = FileOutputStream(tempFile, true).use { out ->
+                    val count = streamProducer { chunk ->
+                        out.write(chunk)
+                        out.flush()
+                    }
+                    out.fd.sync()
+                    count
+                }
+
+                if (writtenBytes <= 0L || !tempFile.exists() || tempFile.length() <= 0L) {
+                    throw IOException("Downloaded audio stream is empty")
+                }
+
+                if (targetFile.exists()) targetFile.delete()
+                if (!tempFile.renameTo(targetFile)) {
+                    tempFile.copyTo(targetFile, overwrite = true)
+                    tempFile.delete()
+                }
+
+                MediaScannerConnection.scanFile(
+                    context,
+                    arrayOf(targetFile.absolutePath),
+                    arrayOf(mimeType),
+                    null
+                )
+                return Uri.fromFile(targetFile).toString() to targetFile.length()
+            } catch (ex: Exception) {
+                if (tempFile.exists()) tempFile.delete()
+                throw ex
+            }
+        }
+    }
+
+    private fun resolveContainerFormat(resolved: XoneExtractor.CachedStream): Pair<String, String> {
+        return if (
+            resolved.acodec == "aac" ||
+            resolved.mimeType.contains("mp4", ignoreCase = true)
+        ) {
+            "m4a" to "audio/mp4"
+        } else {
+            "opus" to "audio/ogg"
+        }
+    }
+
+    private fun sniffLegacyContainer(legacyFile: File): Pair<String, String> {
+        val header = ByteArray(12)
+        val readCount = runCatching {
+            legacyFile.inputStream().use { it.read(header) }
+        }.getOrDefault(0)
+        if (
+            readCount >= 8 &&
+            header[4] == 'f'.code.toByte() &&
+            header[5] == 't'.code.toByte() &&
+            header[6] == 'y'.code.toByte() &&
+            header[7] == 'p'.code.toByte()
+        ) {
+            return "m4a" to "audio/mp4"
+        }
+        return "opus" to "audio/ogg"
+    }
+
+    private fun buildSafeDownloadFileName(
+        videoId: String,
+        title: String?,
+        artist: String?,
+        ext: String
+    ): String {
+        val cleanArtist = sanitizeFilePart(artist, 48)
+        val cleanTitle = sanitizeFilePart(title, 64)
+        val base = when {
+            cleanArtist.isNotEmpty() && cleanTitle.isNotEmpty() ->
+                "$cleanArtist - $cleanTitle [$videoId]"
+            cleanTitle.isNotEmpty() -> "$cleanTitle [$videoId]"
+            else -> videoId
+        }
+        return "$base.$ext"
+    }
+
+    private fun sanitizeFilePart(raw: String?, maxLen: Int): String {
+        val cleaned = raw.orEmpty()
+            .replace(FILE_NAME_UNSAFE_REGEX, " ")
+            .replace(WHITESPACE_COLLAPSE_REGEX, " ")
+            .trim()
+            .trim('.')
+        return if (cleaned.length > maxLen) {
+            cleaned.substring(0, maxLen).trim().trim('.')
+        } else {
+            cleaned
+        }
+    }
+
     private class HttpStatusException(val code: Int) : IOException("Download failed with HTTP $code")
 
-    private suspend fun downloadStreamChunkedToTempFile(videoId: String, tempFile: File) {
-        if (tempFile.exists()) {
-            tempFile.delete()
-        }
-
-        var currentStreamUrl = XoneExtractor.resolveAudioStream(videoId).streamUrl
+    private suspend fun downloadStreamChunked(
+        videoId: String,
+        initialStreamUrl: String,
+        onChunk: (ByteArray) -> Unit
+    ): Long {
+        var currentStreamUrl = initialStreamUrl
         var downloadedBytes = 0L
         var totalBytes = -1L
 
@@ -641,11 +939,7 @@ class XoneAudioPlugin : Plugin() {
                         break
                     }
 
-                    FileOutputStream(tempFile, true).use { output ->
-                        output.write(chunkBytes)
-                        output.flush()
-                        output.fd.sync()
-                    }
+                    onChunk(chunkBytes)
                     downloadedBytes += chunkBytes.size.toLong()
                     chunkWritten = true
 
@@ -675,10 +969,8 @@ class XoneAudioPlugin : Plugin() {
                 throw lastError ?: IOException("Chunk download aborted")
             }
         }
-    }
 
-    private fun sanitizeVideoId(raw: String?): String {
-        return raw?.trim()?.replace(VIDEO_ID_SANITIZE_REGEX, "").orEmpty()
+        return downloadedBytes
     }
 
     private fun formatSeconds(totalSeconds: Int): String {
@@ -704,6 +996,7 @@ class XoneAudioPlugin : Plugin() {
         private const val YTM_REFERER = "https://music.youtube.com/"
         private val CONTENT_RANGE_REGEX =
             Regex("bytes\\s+\\d+-\\d+/(\\d+)", RegexOption.IGNORE_CASE)
-        private val VIDEO_ID_SANITIZE_REGEX = Regex("[^a-zA-Z0-9_-]")
+        private val FILE_NAME_UNSAFE_REGEX = Regex("[\\\\/:*?\"<>|\\p{Cntrl}]+")
+        private val WHITESPACE_COLLAPSE_REGEX = Regex("\\s+")
     }
 }

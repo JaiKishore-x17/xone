@@ -1,9 +1,13 @@
 package com.xone.music
 
 import android.app.PendingIntent
+import android.content.ContentUris
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
@@ -45,10 +49,10 @@ class XonePlaybackService : MediaSessionService() {
             if (uri.scheme == XONE_SCHEME) {
                 val rawVideoId = uri.lastPathSegment
                     ?: throw IOException("Missing track videoId in URI: $uri")
-                val videoId = rawVideoId.replace(VIDEO_ID_SANITIZE_REGEX, "")
-                val localFile = File(filesDir, "offline_tracks/$videoId.audio")
-                if (localFile.exists() && localFile.length() > 0L) {
-                    dataSpec.buildUpon().setUri(Uri.fromFile(localFile)).build()
+                val videoId = sanitizeVideoId(rawVideoId)
+                val offlineUri = findOfflineTrackUri(this, videoId)
+                if (offlineUri != null) {
+                    dataSpec.buildUpon().setUri(offlineUri).build()
                 } else {
                     val resolved = XoneExtractor.resolveAudioStream(videoId)
                     dataSpec.buildUpon().setUri(Uri.parse(resolved.streamUrl)).build()
@@ -139,6 +143,115 @@ class XonePlaybackService : MediaSessionService() {
 
     companion object {
         const val XONE_SCHEME = "xone"
+        const val OFFLINE_PUBLIC_SUBDIR = "Xone"
+        const val LEGACY_OFFLINE_DIR = "offline_tracks"
         private val VIDEO_ID_SANITIZE_REGEX = Regex("[^a-zA-Z0-9_-]")
+
+        fun sanitizeVideoId(raw: String?): String {
+            return raw?.trim()?.replace(VIDEO_ID_SANITIZE_REGEX, "").orEmpty()
+        }
+
+        fun getPublicMusicXoneDir(): File {
+            @Suppress("DEPRECATION")
+            val musicDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC)
+            return File(musicDir, OFFLINE_PUBLIC_SUBDIR)
+        }
+
+        fun findLegacyOfflineFile(context: Context, rawVideoId: String): File? {
+            val videoId = sanitizeVideoId(rawVideoId)
+            if (videoId.isEmpty()) return null
+            val legacyFile = File(File(context.filesDir, LEGACY_OFFLINE_DIR), "$videoId.audio")
+            return if (legacyFile.exists() && legacyFile.length() > 0L) legacyFile else null
+        }
+
+        fun findPublicOfflineTrackUri(context: Context, rawVideoId: String): Uri? {
+            val videoId = sanitizeVideoId(rawVideoId)
+            if (videoId.isEmpty()) return null
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val projection = arrayOf(
+                    MediaStore.Audio.Media._ID,
+                    MediaStore.Audio.Media.DISPLAY_NAME,
+                    MediaStore.Audio.Media.SIZE,
+                    MediaStore.Audio.Media.RELATIVE_PATH
+                )
+                val selection =
+                    "${MediaStore.Audio.Media.RELATIVE_PATH} LIKE ? AND " +
+                        "(${MediaStore.Audio.Media.DISPLAY_NAME} LIKE ? OR ${MediaStore.Audio.Media.DISPLAY_NAME} LIKE ?) AND " +
+                        "${MediaStore.Audio.Media.IS_PENDING} = 0 AND ${MediaStore.Audio.Media.SIZE} > 0"
+                val args = arrayOf("%Music/Xone%", "%[$videoId]%", "$videoId.%")
+                runCatching {
+                    context.contentResolver.query(
+                        MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                        projection,
+                        selection,
+                        args,
+                        "${MediaStore.Audio.Media.DATE_MODIFIED} DESC"
+                    )?.use { cursor ->
+                        val idCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
+                        val nameCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME)
+                        val sizeCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.SIZE)
+                        val relCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.RELATIVE_PATH)
+                        while (cursor.moveToNext()) {
+                            val id = cursor.getLong(idCol)
+                            val name = cursor.getString(nameCol).orEmpty()
+                            val size = cursor.getLong(sizeCol)
+                            val rel = cursor.getString(relCol).orEmpty()
+                            if (
+                                rel.contains("Music/Xone", ignoreCase = true) &&
+                                (name.contains("[$videoId]") || name.startsWith("$videoId.")) &&
+                                size > 0L
+                            ) {
+                                val contentUri = ContentUris.withAppendedId(
+                                    MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                                    id
+                                )
+                                val readable = runCatching {
+                                    context.contentResolver.openAssetFileDescriptor(contentUri, "r")?.use { afd ->
+                                        afd.length != 0L
+                                    } ?: false
+                                }.getOrDefault(false)
+                                if (readable) {
+                                    return contentUri
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            val publicDir = getPublicMusicXoneDir()
+            if (publicDir.exists() && publicDir.isDirectory) {
+                val matched = publicDir.listFiles()?.firstOrNull { file ->
+                    file.isFile &&
+                        file.length() > 0L &&
+                        !file.name.endsWith(".tmp") &&
+                        (file.name.contains("[$videoId]") || file.name.startsWith("$videoId."))
+                }
+                if (matched != null) {
+                    return Uri.fromFile(matched)
+                }
+            }
+
+            return null
+        }
+
+        fun findOfflineTrackUri(context: Context, rawVideoId: String): Uri? {
+            return findPublicOfflineTrackUri(context, rawVideoId)
+                ?: findLegacyOfflineFile(context, rawVideoId)?.let { Uri.fromFile(it) }
+        }
+
+        fun getOfflineUriSize(context: Context, uri: Uri): Long {
+            if (uri.scheme == "file") {
+                val path = uri.path ?: return 0L
+                val file = File(path)
+                return if (file.exists()) file.length() else 0L
+            }
+            return runCatching {
+                context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { afd ->
+                    afd.length.coerceAtLeast(0L)
+                } ?: 0L
+            }.getOrDefault(0L)
+        }
     }
 }
