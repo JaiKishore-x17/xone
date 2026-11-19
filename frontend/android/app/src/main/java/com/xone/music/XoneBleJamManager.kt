@@ -831,7 +831,7 @@ class XoneBleJamManager private constructor(private val appContext: Context) {
         }
     }
 
-    private fun playJamTrackAtIndex(index: Int) {
+    fun playJamTrackAtIndex(index: Int) {
         if (!isActive || role != ROLE_HOST) return
         val queueSnapshot: List<JamTrack>
         val selectedTrack: JamTrack

@@ -319,7 +319,7 @@ class XoneAudioPlugin : Plugin() {
                 val existingIndex = (0 until ctrl.mediaItemCount).indexOfFirst { idx ->
                     ctrl.getMediaItemAt(idx).mediaId == mediaItem.mediaId
                 }
-                if (existingIndex >= 0 && ctrl.repeatMode == Player.REPEAT_MODE_ALL) {
+                if (existingIndex >= 0 && ctrl.mediaItemCount > 1) {
                     ctrl.seekTo(existingIndex, 0L)
                 } else {
                     ctrl.setMediaItem(mediaItem)

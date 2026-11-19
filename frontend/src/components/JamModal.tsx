@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   Bluetooth,
   Check,
@@ -41,7 +41,10 @@ export const JamModal: React.FC = () => {
   const setJamSpeakerDevices = usePlayerStore((s) => s.setJamSpeakerDevices);
   const setJamMultiSpeakerMode = usePlayerStore((s) => s.setJamMultiSpeakerMode);
   const playTrack = usePlayerStore((s) => s.playTrack);
+  const navigate = usePlayerStore((s) => s.navigate);
   const showToast = usePlayerStore((s) => s.showToast);
+
+  const jamSwipeRef = useRef<{ x: number; y: number } | null>(null);
 
   const [activeTab, setActiveTab] = useState<"host" | "join">("host");
   const [deviceNameInput, setDeviceNameInput] = useState("");
@@ -352,11 +355,45 @@ export const JamModal: React.FC = () => {
 
   return (
     <div
+      data-no-tab-swipe="true"
       onClick={() => setJamModalOpen(false)}
       className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 select-none"
     >
       <div
         onClick={(e) => e.stopPropagation()}
+        onTouchStart={(e) => {
+          if (e.touches.length !== 1) {
+            jamSwipeRef.current = null;
+            return;
+          }
+          const target = e.target as HTMLElement | null;
+          if (
+            target?.closest(
+              'input, textarea, button[role="switch"], [role="slider"]'
+            )
+          ) {
+            jamSwipeRef.current = null;
+            return;
+          }
+          jamSwipeRef.current = {
+            x: e.touches[0].clientX,
+            y: e.touches[0].clientY,
+          };
+        }}
+        onTouchEnd={(e) => {
+          const start = jamSwipeRef.current;
+          jamSwipeRef.current = null;
+          if (!start || e.changedTouches.length === 0) return;
+          const deltaX = e.changedTouches[0].clientX - start.x;
+          const deltaY = e.changedTouches[0].clientY - start.y;
+          if (deltaX > 65 && Math.abs(deltaX) > Math.abs(deltaY) * 1.5) {
+            setJamModalOpen(false);
+            navigate({ type: "library" });
+          }
+        }}
+        onTouchCancel={() => {
+          jamSwipeRef.current = null;
+        }}
         className="w-full sm:max-w-lg max-h-[90vh] overflow-y-auto rounded-t-2xl sm:rounded-2xl bg-[#141414] border-t sm:border border-white/10 shadow-2xl p-5 pb-[calc(1.5rem+env(safe-area-inset-bottom))] sm:p-6"
       >
         {/* Header */}

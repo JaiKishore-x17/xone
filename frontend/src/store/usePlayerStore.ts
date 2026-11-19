@@ -101,6 +101,7 @@ interface PlayerState {
   // Modal / UI Feedback
   isNewPlaylistModalOpen: boolean;
   isJamModalOpen: boolean;
+  isMobilePlayerExpanded: boolean;
   isJamBusy: boolean;
   jamState: JamState;
   toastMessage: string | null;
@@ -155,6 +156,7 @@ interface PlayerState {
   // UI Helpers
   setNewPlaylistModalOpen: (open: boolean) => void;
   setJamModalOpen: (open: boolean) => void;
+  setMobilePlayerExpanded: (open: boolean) => void;
   setJamState: (state: JamState) => void;
   startJamSession: (deviceName?: string) => Promise<void>;
   joinJamSession: (code: string, deviceName?: string) => Promise<void>;
@@ -209,6 +211,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
   isNewPlaylistModalOpen: false,
   isJamModalOpen: false,
+  isMobilePlayerExpanded: false,
   isJamBusy: false,
   jamState: EMPTY_JAM_STATE,
   toastMessage: null,
@@ -225,6 +228,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
   setNewPlaylistModalOpen: (open) => set({ isNewPlaylistModalOpen: open }),
   setJamModalOpen: (open) => set({ isJamModalOpen: open }),
+  setMobilePlayerExpanded: (open) => set({ isMobilePlayerExpanded: open }),
   setJamState: (jamState) => {
     const isActive = Boolean(jamState.active || jamState.isActive);
     const normalized: JamState = {
@@ -595,8 +599,13 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
     const matchIndex = state.queue.findIndex((t) => t.video_id === track.video_id);
     const resolvedTrack = matchIndex >= 0 ? state.queue[matchIndex] : track;
-    const nextQueue = matchIndex >= 0 ? state.queue : [track];
-    const nextIndex = matchIndex >= 0 ? matchIndex : 0;
+    const nextQueue =
+      matchIndex >= 0
+        ? state.queue
+        : state.queue.length > 0
+          ? [...state.queue, track]
+          : [track];
+    const nextIndex = matchIndex >= 0 ? matchIndex : nextQueue.length - 1;
 
     set({
       currentTrack: resolvedTrack,

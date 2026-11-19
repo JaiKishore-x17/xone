@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.os.Bundle
 import android.os.Environment
 import android.os.Handler
 import android.os.Looper
@@ -13,7 +14,9 @@ import android.provider.MediaStore
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
+import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
@@ -29,6 +32,11 @@ import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import java.io.File
 import java.io.IOException
 
@@ -36,7 +44,11 @@ import java.io.IOException
 class XonePlaybackService : MediaSessionService() {
 
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val effectsProcessor = XoneAudioEffectsProcessor()
+
+    @Volatile
+    private var isFetchingNativeRadio = false
 
     @Volatile
     private var eightDEnabled = false
@@ -186,12 +198,210 @@ class XonePlaybackService : MediaSessionService() {
             pendingFlags
         )
 
-        val session = MediaSession.Builder(this, exoPlayer)
+        val sessionPlayer = object : ForwardingPlayer(exoPlayer) {
+            override fun getAvailableCommands(): Player.Commands {
+                return super.getAvailableCommands().buildUpon()
+                    .addAll(
+                        Player.COMMAND_SEEK_TO_NEXT,
+                        Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM,
+                        Player.COMMAND_SEEK_TO_PREVIOUS,
+                        Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM
+                    )
+                    .build()
+            }
+
+            override fun isCommandAvailable(command: Int): Boolean {
+                return when (command) {
+                    Player.COMMAND_SEEK_TO_NEXT,
+                    Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM,
+                    Player.COMMAND_SEEK_TO_PREVIOUS,
+                    Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM -> true
+                    else -> super.isCommandAvailable(command)
+                }
+            }
+
+            override fun hasNextMediaItem(): Boolean {
+                return mediaItemCount > 0 || super.hasNextMediaItem()
+            }
+
+            override fun hasPreviousMediaItem(): Boolean {
+                return mediaItemCount > 0 || super.hasPreviousMediaItem()
+            }
+
+            override fun seekToNext() {
+                handleQueueSkipNext(exoPlayer)
+            }
+
+            override fun seekToNextMediaItem() {
+                handleQueueSkipNext(exoPlayer)
+            }
+
+            override fun seekToPrevious() {
+                handleQueueSkipPrevious(exoPlayer)
+            }
+
+            override fun seekToPreviousMediaItem() {
+                handleQueueSkipPrevious(exoPlayer)
+            }
+        }
+
+        val sessionCallback = object : MediaSession.Callback {
+            override fun onConnect(
+                session: MediaSession,
+                controller: MediaSession.ControllerInfo
+            ): MediaSession.ConnectionResult {
+                val baseResult = super.onConnect(session, controller)
+                val playerCommands = baseResult.availablePlayerCommands.buildUpon()
+                    .addAll(
+                        Player.COMMAND_SEEK_TO_NEXT,
+                        Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM,
+                        Player.COMMAND_SEEK_TO_PREVIOUS,
+                        Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM
+                    )
+                    .build()
+                return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
+                    .setAvailableSessionCommands(baseResult.availableSessionCommands)
+                    .setAvailablePlayerCommands(playerCommands)
+                    .build()
+            }
+        }
+
+        val session = MediaSession.Builder(this, sessionPlayer)
             .setSessionActivity(sessionActivityPendingIntent)
+            .setCallback(sessionCallback)
             .build()
 
         player = exoPlayer
         mediaSession = session
+    }
+
+    private fun handleQueueSkipNext(exoPlayer: ExoPlayer) {
+        val count = exoPlayer.mediaItemCount
+        if (count == 0) return
+
+        if (XoneBleJamManager.isJamActive()) {
+            val nextIdx = (exoPlayer.currentMediaItemIndex.coerceAtLeast(0) + 1) % count
+            XoneBleJamManager.getInstance(this).playJamTrackAtIndex(nextIdx)
+            return
+        }
+
+        val curIdx = exoPlayer.currentMediaItemIndex
+        val nextIdx = curIdx + 1
+        if (nextIdx in 0 until count) {
+            exoPlayer.seekTo(nextIdx, 0L)
+            exoPlayer.prepare()
+            exoPlayer.play()
+            return
+        }
+
+        if (exoPlayer.repeatMode == Player.REPEAT_MODE_ALL && count > 1) {
+            exoPlayer.seekTo(0, 0L)
+            exoPlayer.prepare()
+            exoPlayer.play()
+            return
+        }
+
+        val currentVideoId = exoPlayer.currentMediaItem?.mediaId.orEmpty()
+        if (currentVideoId.isBlank() || isFetchingNativeRadio) {
+            if (count > 1) {
+                exoPlayer.seekTo(0, 0L)
+                exoPlayer.prepare()
+                exoPlayer.play()
+            }
+            return
+        }
+
+        isFetchingNativeRadio = true
+        val existingIds = (0 until count)
+            .map { idx -> exoPlayer.getMediaItemAt(idx).mediaId }
+            .toHashSet()
+
+        serviceScope.launch {
+            try {
+                val tracks = XoneExtractor.getRadioQueue(currentVideoId, 15)
+                val freshItems = tracks
+                    .filter { t -> t.videoId.isNotBlank() && !existingIds.contains(t.videoId) }
+                    .map { it.toMediaItem() }
+
+                mainHandler.post {
+                    isFetchingNativeRadio = false
+                    val currentPlayer = player ?: return@post
+                    if (freshItems.isNotEmpty()) {
+                        val targetIdx = currentPlayer.mediaItemCount
+                        currentPlayer.addMediaItems(freshItems)
+                        currentPlayer.seekTo(targetIdx, 0L)
+                        currentPlayer.prepare()
+                        currentPlayer.play()
+                    } else if (currentPlayer.mediaItemCount > 1) {
+                        currentPlayer.seekTo(0, 0L)
+                        currentPlayer.prepare()
+                        currentPlayer.play()
+                    }
+                }
+            } catch (_: Exception) {
+                mainHandler.post {
+                    isFetchingNativeRadio = false
+                    val currentPlayer = player ?: return@post
+                    if (currentPlayer.mediaItemCount > 1) {
+                        currentPlayer.seekTo(0, 0L)
+                        currentPlayer.prepare()
+                        currentPlayer.play()
+                    }
+                }
+            }
+        }
+    }
+
+    private fun handleQueueSkipPrevious(exoPlayer: ExoPlayer) {
+        val count = exoPlayer.mediaItemCount
+        if (count == 0) return
+
+        if (exoPlayer.currentPosition > 3_000L) {
+            exoPlayer.seekTo(0L)
+            exoPlayer.play()
+            return
+        }
+
+        if (XoneBleJamManager.isJamActive()) {
+            val prevIdx = (exoPlayer.currentMediaItemIndex.coerceAtLeast(0) - 1 + count) % count
+            XoneBleJamManager.getInstance(this).playJamTrackAtIndex(prevIdx)
+            return
+        }
+
+        val prevIdx = exoPlayer.currentMediaItemIndex - 1
+        if (prevIdx >= 0) {
+            exoPlayer.seekTo(prevIdx, 0L)
+            exoPlayer.prepare()
+            exoPlayer.play()
+        } else if (count > 1) {
+            exoPlayer.seekTo(count - 1, 0L)
+            exoPlayer.prepare()
+            exoPlayer.play()
+        } else {
+            exoPlayer.seekTo(0L)
+            exoPlayer.play()
+        }
+    }
+
+    private fun XoneExtractor.ExtractedTrack.toMediaItem(): MediaItem {
+        val extras = Bundle().apply {
+            putString("video_id", videoId)
+            putString("thumbnail", thumbnail)
+            putInt("duration_seconds", durationSeconds)
+        }
+        val metadataBuilder = MediaMetadata.Builder()
+            .setTitle(title.ifBlank { "Untitled Track" })
+            .setArtist(artist.ifBlank { "Unknown Artist" })
+            .setAlbumTitle(album.ifBlank { "Xone" })
+            .setExtras(extras)
+        if (thumbnail.isNotBlank()) {
+            metadataBuilder.setArtworkUri(Uri.parse(thumbnail))
+        }
+        return MediaItem.Builder()
+            .setMediaId(videoId)
+            .setUri(Uri.parse("$XONE_SCHEME://track/$videoId"))
+            .setMediaMetadata(metadataBuilder.build())
+            .build()
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? {
@@ -209,6 +419,7 @@ class XonePlaybackService : MediaSessionService() {
         if (instance === this) {
             instance = null
         }
+        serviceScope.cancel()
         effectsProcessor.eightDEnabled = false
         effectsProcessor.srEnabled = false
         mediaSession?.run {

@@ -54,19 +54,43 @@ export const PlayerBar: React.FC = () => {
   const toggleSlowedReverb = usePlayerStore((s) => s.toggleSlowedReverb);
   const setJamModalOpen = usePlayerStore((s) => s.setJamModalOpen);
   const navigate = usePlayerStore((s) => s.navigate);
+  const isMobileExpanded = usePlayerStore((s) => s.isMobilePlayerExpanded);
+  const setIsMobileExpanded = usePlayerStore((s) => s.setMobilePlayerExpanded);
 
-  const [isMobileExpanded, setIsMobileExpanded] = useState(false);
   const [isDraggingSeek, setIsDraggingSeek] = useState(false);
   const [dragSeekValue, setDragSeekValue] = useState(0);
+  const [miniDragX, setMiniDragX] = useState(0);
+  const [miniOpacity, setMiniOpacity] = useState(1);
+  const [miniTransition, setMiniTransition] = useState("none");
   const seekBarRef = useRef<HTMLDivElement | null>(null);
   const mobileSeekBarRef = useRef<HTMLDivElement | null>(null);
   const volumeBarRef = useRef<HTMLDivElement | null>(null);
+  const miniTouchRef = useRef<{
+    startX: number;
+    startY: number;
+    maxMove: number;
+    lockedAxis: "x" | "y" | null;
+  } | null>(null);
+  const miniAnimTimerRef = useRef<number | null>(null);
+  const miniRafRef = useRef<number | null>(null);
+  const suppressExpandClickRef = useRef(false);
 
   useEffect(() => {
     if (!currentTrack) {
       setIsMobileExpanded(false);
     }
-  }, [currentTrack]);
+  }, [currentTrack, setIsMobileExpanded]);
+
+  useEffect(() => {
+    return () => {
+      if (miniAnimTimerRef.current !== null) {
+        window.clearTimeout(miniAnimTimerRef.current);
+      }
+      if (miniRafRef.current !== null) {
+        window.cancelAnimationFrame(miniRafRef.current);
+      }
+    };
+  }, []);
 
   const effectiveDuration =
     duration > 0 ? duration : currentTrack?.duration_seconds || 0;
@@ -138,12 +162,148 @@ export const PlayerBar: React.FC = () => {
     setVolume(ratio);
   };
 
+  const resetMiniDragPosition = () => {
+    setMiniTransition(
+      "transform 200ms cubic-bezier(0.22, 1, 0.36, 1), opacity 200ms ease-out"
+    );
+    setMiniDragX(0);
+    setMiniOpacity(1);
+  };
+
+  const handleMiniTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (e.touches.length !== 1) return;
+    if (miniAnimTimerRef.current !== null) {
+      window.clearTimeout(miniAnimTimerRef.current);
+      miniAnimTimerRef.current = null;
+    }
+    if (miniRafRef.current !== null) {
+      window.cancelAnimationFrame(miniRafRef.current);
+      miniRafRef.current = null;
+    }
+    miniTouchRef.current = {
+      startX: e.touches[0].clientX,
+      startY: e.touches[0].clientY,
+      maxMove: 0,
+      lockedAxis: null,
+    };
+    suppressExpandClickRef.current = false;
+    setMiniTransition("none");
+  };
+
+  const handleMiniTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
+    const drag = miniTouchRef.current;
+    if (!drag || e.touches.length !== 1) return;
+    const dx = e.touches[0].clientX - drag.startX;
+    const dy = e.touches[0].clientY - drag.startY;
+    const dist = Math.hypot(dx, dy);
+    if (dist > drag.maxMove) {
+      drag.maxMove = dist;
+    }
+
+    if (drag.lockedAxis === null && dist >= 8) {
+      drag.lockedAxis = Math.abs(dx) >= Math.abs(dy) ? "x" : "y";
+      suppressExpandClickRef.current = true;
+    }
+
+    if (drag.lockedAxis === "x") {
+      const clampedX = Math.max(-110, Math.min(110, dx));
+      setMiniTransition("none");
+      setMiniDragX(clampedX);
+      setMiniOpacity(Math.max(0.15, 1 - Math.abs(clampedX) / 140));
+    }
+  };
+
+  const triggerMiniSwipeSkip = (direction: "next" | "prev") => {
+    const exitX = direction === "next" ? -110 : 110;
+    const enterX = direction === "next" ? 70 : -70;
+
+    setMiniTransition("transform 140ms ease-out, opacity 140ms ease-out");
+    setMiniDragX(exitX);
+    setMiniOpacity(0);
+
+    miniAnimTimerRef.current = window.setTimeout(() => {
+      miniAnimTimerRef.current = null;
+      if (direction === "next") {
+        playNextTrack(false);
+      } else {
+        playPreviousTrack();
+      }
+      setMiniTransition("none");
+      setMiniDragX(enterX);
+      setMiniOpacity(0);
+
+      miniRafRef.current = window.requestAnimationFrame(() => {
+        miniRafRef.current = window.requestAnimationFrame(() => {
+          miniRafRef.current = null;
+          setMiniTransition(
+            "transform 220ms cubic-bezier(0.22, 1, 0.36, 1), opacity 220ms ease-out"
+          );
+          setMiniDragX(0);
+          setMiniOpacity(1);
+        });
+      });
+    }, 140);
+  };
+
+  const handleMiniTouchEnd = (e: React.TouchEvent<HTMLDivElement>) => {
+    const drag = miniTouchRef.current;
+    miniTouchRef.current = null;
+    if (!drag) return;
+
+    const dx =
+      e.changedTouches.length > 0
+        ? e.changedTouches[0].clientX - drag.startX
+        : miniDragX;
+    const dy =
+      e.changedTouches.length > 0
+        ? e.changedTouches[0].clientY - drag.startY
+        : 0;
+    const totalMove = Math.max(drag.maxMove, Math.hypot(dx, dy));
+
+    if (totalMove >= 8) {
+      suppressExpandClickRef.current = true;
+      window.setTimeout(() => {
+        suppressExpandClickRef.current = false;
+      }, 250);
+    } else {
+      suppressExpandClickRef.current = false;
+      resetMiniDragPosition();
+      return;
+    }
+
+    if (drag.lockedAxis === "y") {
+      resetMiniDragPosition();
+      return;
+    }
+
+    if (dx < -55) {
+      triggerMiniSwipeSkip("next");
+    } else if (dx > 55) {
+      triggerMiniSwipeSkip("prev");
+    } else {
+      resetMiniDragPosition();
+    }
+  };
+
+  const handleMiniTouchCancel = () => {
+    miniTouchRef.current = null;
+    suppressExpandClickRef.current = false;
+    resetMiniDragPosition();
+  };
+
   return (
     <>
       {/* ===================== COMPACT MOBILE MINI-PLAYER (< 768px) ===================== */}
       {currentTrack && (
         <div
-          onClick={() => setIsMobileExpanded(true)}
+          data-no-tab-swipe="true"
+          onClick={() => {
+            if (suppressExpandClickRef.current) {
+              suppressExpandClickRef.current = false;
+              return;
+            }
+            setIsMobileExpanded(true);
+          }}
           role="button"
           tabIndex={0}
           onKeyDown={(e) => {
@@ -153,26 +313,43 @@ export const PlayerBar: React.FC = () => {
           className="fixed bottom-[calc(3.5rem+env(safe-area-inset-bottom))] left-2 right-2 z-40 md:hidden rounded-lg bg-[#141414] border border-white/10 p-2 shadow-2xl overflow-hidden select-none cursor-pointer"
         >
           <div className="flex items-center gap-2.5">
-            <div className="relative w-10 h-10 rounded overflow-hidden shrink-0 bg-black">
-              <img
-                src={currentTrack.thumbnail}
-                alt={currentTrack.title}
-                className="w-full h-full object-cover"
-              />
-              {isBuffering && (
-                <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
-                  <Loader2 size={15} className="animate-spin text-[#FF5E4D]" />
+            <div
+              onTouchStart={handleMiniTouchStart}
+              onTouchMove={handleMiniTouchMove}
+              onTouchEnd={handleMiniTouchEnd}
+              onTouchCancel={handleMiniTouchCancel}
+              className="flex-1 min-w-0 overflow-hidden touch-pan-y"
+            >
+              <div
+                style={{
+                  transform: `translateX(${miniDragX}px)`,
+                  opacity: miniOpacity,
+                  transition: miniTransition,
+                }}
+                className="flex items-center gap-2.5 min-w-0"
+              >
+                <div className="relative w-10 h-10 rounded overflow-hidden shrink-0 bg-black">
+                  <img
+                    src={currentTrack.thumbnail}
+                    alt={currentTrack.title}
+                    className="w-full h-full object-cover"
+                  />
+                  {isBuffering && (
+                    <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                      <Loader2 size={15} className="animate-spin text-[#FF5E4D]" />
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
 
-            <div className="min-w-0 flex-1">
-              <p className="text-xs font-bold text-white truncate">
-                {currentTrack.title}
-              </p>
-              <p className="text-[11px] text-[#B3B3B3] truncate">
-                {currentTrack.artist}
-              </p>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-bold text-white truncate">
+                    {currentTrack.title}
+                  </p>
+                  <p className="text-[11px] text-[#B3B3B3] truncate">
+                    {currentTrack.artist}
+                  </p>
+                </div>
+              </div>
             </div>
 
             <div className="flex items-center shrink-0">
@@ -229,7 +406,10 @@ export const PlayerBar: React.FC = () => {
 
       {/* ===================== FULL-SCREEN MOBILE NOW PLAYING SHEET (< 768px) ===================== */}
       {isMobileExpanded && currentTrack && (
-        <div className="fixed inset-0 z-50 md:hidden bg-gradient-to-b from-[#1E1E1E] via-[#000000] to-[#000000] flex flex-col justify-between px-6 pt-[calc(1rem+env(safe-area-inset-top))] pb-[calc(2rem+env(safe-area-inset-bottom))] overflow-y-auto select-none">
+        <div
+          data-no-tab-swipe="true"
+          className="fixed inset-0 z-50 md:hidden bg-gradient-to-b from-[#1E1E1E] via-[#000000] to-[#000000] flex flex-col justify-between px-6 pt-[calc(1rem+env(safe-area-inset-top))] pb-[calc(2rem+env(safe-area-inset-bottom))] overflow-y-auto select-none"
+        >
           {/* Top Header */}
           <div className="flex items-center justify-between gap-2">
             <button
@@ -344,6 +524,7 @@ export const PlayerBar: React.FC = () => {
             <div>
               <div
                 ref={mobileSeekBarRef}
+                data-no-tab-swipe="true"
                 onPointerDown={(e) =>
                   handleSeekPointerDown(e, mobileSeekBarRef.current)
                 }
@@ -690,6 +871,7 @@ export const PlayerBar: React.FC = () => {
             </span>
             <div
               ref={seekBarRef}
+              data-no-tab-swipe="true"
               onPointerDown={(e) =>
                 handleSeekPointerDown(e, seekBarRef.current)
               }
@@ -791,6 +973,7 @@ export const PlayerBar: React.FC = () => {
 
             <div
               ref={volumeBarRef}
+              data-no-tab-swipe="true"
               onPointerDown={handleVolumePointerDown}
               onPointerMove={handleVolumePointerMove}
               role="slider"
