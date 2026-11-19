@@ -21,6 +21,8 @@ function syncNativeAudioEffects(eightD: boolean, slowedReverb: boolean): void {
 }
 
 const VOLUME_STORAGE_KEY = "xone_volume";
+const RECENT_SEARCHES_STORAGE_KEY = "xone_recent_searches";
+const MAX_RECENT_SEARCHES = 15;
 
 function readInitialVolume(): number {
   try {
@@ -35,6 +37,38 @@ function readInitialVolume(): number {
     // ignore storage failures
   }
   return 0.85;
+}
+
+function readInitialRecentSearches(): Track[] {
+  try {
+    const raw = localStorage.getItem(RECENT_SEARCHES_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter(
+        (item): item is Track =>
+          Boolean(item) &&
+          typeof item === "object" &&
+          typeof item.video_id === "string" &&
+          item.video_id.length > 0 &&
+          typeof item.title === "string"
+      )
+      .slice(0, MAX_RECENT_SEARCHES);
+  } catch {
+    return [];
+  }
+}
+
+function persistRecentSearches(tracks: Track[]): void {
+  try {
+    localStorage.setItem(
+      RECENT_SEARCHES_STORAGE_KEY,
+      JSON.stringify(tracks.slice(0, MAX_RECENT_SEARCHES))
+    );
+  } catch {
+    // ignore storage failures
+  }
 }
 
 function shuffleKeepingFirst(tracks: Track[], firstTrack: Track): Track[] {
@@ -86,6 +120,7 @@ interface PlayerState {
   historyIndex: number;
   searchQuery: string;
   searchResults: SearchResponse | null;
+  recentSearches: Track[];
   isSearching: boolean;
   searchError: string | null;
 
@@ -138,9 +173,13 @@ interface PlayerState {
   goForward: () => void;
   setSearchQuery: (q: string) => void;
   runSearch: (q: string) => Promise<void>;
+  addRecentSearchTrack: (track: Track) => void;
+  removeRecentSearchTrack: (videoId: string) => void;
+  clearRecentSearches: () => void;
 
   // Library Actions
   fetchLibrary: () => Promise<void>;
+  syncOfflineDownloads: () => Promise<void>;
   loadPlaylistDetail: (playlistId: number) => Promise<void>;
   toggleLike: (track: Track) => Promise<void>;
   downloadTrack: (track: Track) => Promise<void>;
@@ -198,6 +237,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   historyIndex: 0,
   searchQuery: "",
   searchResults: null,
+  recentSearches: readInitialRecentSearches(),
   isSearching: false,
   searchError: null,
 
@@ -480,6 +520,9 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
   playTrack: (track, contextQueue) => {
     const state = get();
+    if (state.activeView.type === "search") {
+      state.addRecentSearchTrack(track);
+    }
 
     // When a BLE Jam is active, route track clicks into the Jam queue and suppress solo/radio playback
     if (state.jamState.active) {
@@ -968,6 +1011,9 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
   navigate: (view) => {
     const { activeView, history, historyIndex, loadPlaylistDetail } = get();
+    if (view.type === "downloads" || view.type === "library") {
+      void get().syncOfflineDownloads();
+    }
     if (viewsEqual(activeView, view)) {
       if (view.type === "playlist") {
         void loadPlaylistDetail(view.playlistId);
@@ -1031,6 +1077,40 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     }
   },
 
+  addRecentSearchTrack: (track) => {
+    if (!track.video_id) return;
+    const deduped = [
+      track,
+      ...get().recentSearches.filter((t) => t.video_id !== track.video_id),
+    ].slice(0, MAX_RECENT_SEARCHES);
+    persistRecentSearches(deduped);
+    set({ recentSearches: deduped });
+  },
+
+  removeRecentSearchTrack: (videoId) => {
+    const updated = get().recentSearches.filter((t) => t.video_id !== videoId);
+    persistRecentSearches(updated);
+    set({ recentSearches: updated });
+  },
+
+  clearRecentSearches: () => {
+    persistRecentSearches([]);
+    set({ recentSearches: [] });
+  },
+
+  syncOfflineDownloads: async () => {
+    try {
+      const syncedTracks = await api.syncOfflineDownloads();
+      const downloadedIds: Record<string, boolean> = {};
+      for (const song of syncedTracks) {
+        downloadedIds[song.video_id] = true;
+      }
+      set({ downloadedTracks: syncedTracks, downloadedIds });
+    } catch {
+      // ignore offline scan failure
+    }
+  },
+
   fetchLibrary: async () => {
     try {
       const [playlists, likedSongs, downloadedTracks] = await Promise.all([
@@ -1047,6 +1127,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         downloadedIds[song.video_id] = true;
       }
       set({ playlists, likedSongs, likedIds, downloadedTracks, downloadedIds });
+      void get().syncOfflineDownloads();
     } catch {
       // silent background fetch fallback
     }

@@ -50,7 +50,8 @@ export const NewPlaylistModal: React.FC = () => {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4"
+      data-no-tab-swipe="true"
+      className="fixed inset-0 z-[120] flex items-center justify-center bg-black/75 backdrop-blur-sm p-4"
       onClick={handleClose}
     >
       <div

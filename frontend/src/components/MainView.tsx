@@ -35,6 +35,7 @@ export const MainView: React.FC = () => {
 
   const searchQuery = usePlayerStore((s) => s.searchQuery);
   const searchResults = usePlayerStore((s) => s.searchResults);
+  const recentSearches = usePlayerStore((s) => s.recentSearches);
   const isSearching = usePlayerStore((s) => s.isSearching);
   const searchError = usePlayerStore((s) => s.searchError);
 
@@ -56,6 +57,11 @@ export const MainView: React.FC = () => {
     (s) => s.setNewPlaylistModalOpen
   );
   const setSearchQuery = usePlayerStore((s) => s.setSearchQuery);
+  const addRecentSearchTrack = usePlayerStore((s) => s.addRecentSearchTrack);
+  const removeRecentSearchTrack = usePlayerStore(
+    (s) => s.removeRecentSearchTrack
+  );
+  const clearRecentSearches = usePlayerStore((s) => s.clearRecentSearches);
 
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
 
@@ -393,35 +399,134 @@ export const MainView: React.FC = () => {
     return (
       <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 md:px-6 pb-[calc(8rem+env(safe-area-inset-bottom))] md:pb-24 pt-5 bg-[#000000]">
         {!searchQuery.trim() ? (
-          <div className="max-w-2xl mx-auto mt-10 md:mt-14 text-center">
-            <div className="w-16 h-16 rounded-2xl bg-[#141414] border border-white/10 flex items-center justify-center mx-auto mb-4">
-              <Search size={28} className="text-[#FF5E4D]" />
+          recentSearches.length > 0 ? (
+            <div className="space-y-6">
+              <div>
+                <div className="flex items-center justify-between gap-2 mb-3">
+                  <h2 className="text-lg md:text-xl font-bold text-white">
+                    Recent Searches
+                  </h2>
+                  <button
+                    type="button"
+                    onClick={clearRecentSearches}
+                    className="min-h-[36px] px-3 py-1 rounded-full bg-[#141414] hover:bg-[#1E1E1E] border border-white/10 text-xs font-semibold text-[#B3B3B3] hover:text-white transition-colors"
+                  >
+                    Clear
+                  </button>
+                </div>
+
+                <div className="space-y-1">
+                  {recentSearches.map((track) => {
+                    const isTrackActive =
+                      currentTrack?.video_id === track.video_id;
+                    return (
+                      <div
+                        key={track.video_id}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => {
+                          addRecentSearchTrack(track);
+                          playTrack(track, recentSearches);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            addRecentSearchTrack(track);
+                            playTrack(track, recentSearches);
+                          }
+                        }}
+                        className="group flex items-center gap-3 px-2.5 md:px-3 py-2 rounded-lg hover:bg-[#1E1E1E] active:bg-[#1E1E1E] cursor-pointer transition-colors"
+                      >
+                        <img
+                          src={track.thumbnail}
+                          alt={track.title}
+                          className="w-11 h-11 rounded object-cover shrink-0 bg-[#141414]"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p
+                            className={`text-sm font-semibold truncate ${
+                              isTrackActive ? "text-[#FF5E4D]" : "text-white"
+                            }`}
+                          >
+                            {track.title}
+                          </p>
+                          <p className="text-xs text-[#B3B3B3] truncate">
+                            {track.artist}
+                            {track.duration ? ` • ${track.duration}` : ""}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            removeRecentSearchTrack(track.video_id);
+                          }}
+                          aria-label={`Remove ${track.title} from recent searches`}
+                          className="min-w-[40px] min-h-[40px] flex items-center justify-center rounded-full text-[#727272] hover:text-white active:bg-white/10 transition-colors shrink-0"
+                        >
+                          <X size={16} />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-white/5">
+                <p className="text-xs font-bold uppercase tracking-wider text-[#727272] mb-2.5">
+                  Quick Search
+                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  {[
+                    "Blinding Lights",
+                    "Daft Punk Instant Crush",
+                    "Midnight City",
+                    "Starboy",
+                    "Tame Impala Let It Happen",
+                  ].map((suggestion) => (
+                    <button
+                      key={suggestion}
+                      type="button"
+                      onClick={() => setSearchQuery(suggestion)}
+                      className="min-h-[40px] md:min-h-0 px-3.5 py-1.5 rounded-full bg-[#141414] hover:bg-[#1E1E1E] text-xs font-semibold text-white border border-white/10 transition-colors"
+                    >
+                      {suggestion}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
-            <h2 className="text-xl md:text-2xl font-extrabold text-white">
-              Play what you love
-            </h2>
-            <p className="text-sm text-[#B3B3B3] mt-2">
-              Search for songs, artists, or moods to start listening.
-            </p>
-            <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
-              {[
-                "Blinding Lights",
-                "Daft Punk Instant Crush",
-                "Midnight City",
-                "Starboy",
-                "Tame Impala Let It Happen",
-              ].map((suggestion) => (
-                <button
-                  key={suggestion}
-                  type="button"
-                  onClick={() => setSearchQuery(suggestion)}
-                  className="min-h-[44px] md:min-h-0 px-4 md:px-3.5 py-2 md:py-1.5 rounded-full bg-[#141414] hover:bg-[#1E1E1E] text-xs font-semibold text-white border border-white/10 transition-colors"
-                >
-                  {suggestion}
-                </button>
-              ))}
+          ) : (
+            <div className="max-w-2xl mx-auto mt-10 md:mt-14 text-center">
+              <div className="w-16 h-16 rounded-2xl bg-[#141414] border border-white/10 flex items-center justify-center mx-auto mb-4">
+                <Search size={28} className="text-[#FF5E4D]" />
+              </div>
+              <h2 className="text-xl md:text-2xl font-extrabold text-white">
+                Play what you love
+              </h2>
+              <p className="text-sm text-[#B3B3B3] mt-2">
+                Search for songs, artists, or moods to start listening.
+              </p>
+              <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
+                {[
+                  "Blinding Lights",
+                  "Daft Punk Instant Crush",
+                  "Midnight City",
+                  "Starboy",
+                  "Tame Impala Let It Happen",
+                ].map((suggestion) => (
+                  <button
+                    key={suggestion}
+                    type="button"
+                    onClick={() => setSearchQuery(suggestion)}
+                    className="min-h-[44px] md:min-h-0 px-4 md:px-3.5 py-2 md:py-1.5 rounded-full bg-[#141414] hover:bg-[#1E1E1E] text-xs font-semibold text-white border border-white/10 transition-colors"
+                  >
+                    {suggestion}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          )
         ) : isSearching && !searchResults ? (
           <div className="flex flex-col items-center justify-center py-20 gap-3">
             <Loader2 size={32} className="animate-spin text-[#FF5E4D]" />

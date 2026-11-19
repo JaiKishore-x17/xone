@@ -1,4 +1,5 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   ChevronDown,
   ChevronRight,
@@ -33,8 +34,18 @@ export const TrackContextMenu: React.FC<TrackContextMenuProps> = ({
 }) => {
   const menuRef = useRef<HTMLDivElement | null>(null);
   const sheetRef = useRef<HTMLDivElement | null>(null);
+  const sheetTouchRef = useRef<{
+    startY: number;
+    startTime: number;
+    canDrag: boolean;
+    dragging: boolean;
+  } | null>(null);
+  const dismissTimerRef = useRef<number | null>(null);
   const [showPlaylistsSub, setShowPlaylistsSub] = useState(false);
   const [mobilePlaylistsOpen, setMobilePlaylistsOpen] = useState(false);
+  const [sheetEntered, setSheetEntered] = useState(false);
+  const [sheetDragY, setSheetDragY] = useState(0);
+  const [sheetTransition, setSheetTransition] = useState("none");
 
   const playlists = usePlayerStore((s) => s.playlists);
   const likedIds = usePlayerStore((s) => s.likedIds);
@@ -57,7 +68,39 @@ export const TrackContextMenu: React.FC<TrackContextMenuProps> = ({
   useEffect(() => {
     setShowPlaylistsSub(false);
     setMobilePlaylistsOpen(false);
+    setSheetDragY(0);
+    setSheetTransition("none");
   }, [menu]);
+
+  useLayoutEffect(() => {
+    if (!menu) {
+      setSheetEntered(false);
+      return;
+    }
+    setSheetEntered(false);
+    let cancelled = false;
+    let raf2 = 0;
+    const raf1 = window.requestAnimationFrame(() => {
+      raf2 = window.requestAnimationFrame(() => {
+        if (!cancelled) {
+          setSheetEntered(true);
+        }
+      });
+    });
+    return () => {
+      cancelled = true;
+      window.cancelAnimationFrame(raf1);
+      if (raf2) window.cancelAnimationFrame(raf2);
+    };
+  }, [menu]);
+
+  useEffect(() => {
+    return () => {
+      if (dismissTimerRef.current !== null) {
+        window.clearTimeout(dismissTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (!menu) return;
@@ -97,13 +140,78 @@ export const TrackContextMenu: React.FC<TrackContextMenuProps> = ({
   const left = Math.min(Math.max(8, menu.x), viewportWidth - 235);
   const top = Math.min(Math.max(8, menu.y), viewportHeight - 250);
 
-  return (
+  const handleSheetTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (e.touches.length !== 1) return;
+    if (dismissTimerRef.current !== null) {
+      window.clearTimeout(dismissTimerRef.current);
+      dismissTimerRef.current = null;
+    }
+    const sheet = sheetRef.current;
+    const target = e.target as HTMLElement | null;
+    const onHandleOrHeader = Boolean(target?.closest("[data-sheet-handle]"));
+    const canDrag = onHandleOrHeader || !sheet || sheet.scrollTop <= 2;
+    sheetTouchRef.current = {
+      startY: e.touches[0].clientY,
+      startTime: Date.now(),
+      canDrag,
+      dragging: false,
+    };
+  };
+
+  const handleSheetTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
+    const drag = sheetTouchRef.current;
+    if (!drag || !drag.canDrag || e.touches.length !== 1) return;
+    const dy = e.touches[0].clientY - drag.startY;
+    if (dy > 4) {
+      drag.dragging = true;
+      setSheetTransition("none");
+      setSheetDragY(dy);
+    }
+  };
+
+  const handleSheetTouchEnd = (e: React.TouchEvent<HTMLDivElement>) => {
+    const drag = sheetTouchRef.current;
+    sheetTouchRef.current = null;
+    if (!drag || !drag.dragging) return;
+
+    const dy =
+      e.changedTouches.length > 0
+        ? e.changedTouches[0].clientY - drag.startY
+        : sheetDragY;
+    const elapsed = Math.max(1, Date.now() - drag.startTime);
+    const velocity = dy / elapsed;
+
+    if (dy > 80 || (dy > 40 && velocity > 0.65)) {
+      const exitY = typeof window !== "undefined" ? window.innerHeight : 700;
+      setSheetTransition("transform 180ms ease-in");
+      setSheetDragY(exitY);
+      dismissTimerRef.current = window.setTimeout(() => {
+        dismissTimerRef.current = null;
+        onClose();
+      }, 180);
+    } else {
+      setSheetTransition("transform 220ms cubic-bezier(0.22, 1, 0.36, 1)");
+      setSheetDragY(0);
+    }
+  };
+
+  const handleSheetTouchCancel = () => {
+    sheetTouchRef.current = null;
+    setSheetTransition("transform 220ms cubic-bezier(0.22, 1, 0.36, 1)");
+    setSheetDragY(0);
+  };
+
+  const backdropAlpha =
+    sheetDragY > 0 ? Math.max(0.15, 0.75 * (1 - sheetDragY / 420)) : 0.75;
+
+  const content = (
     <>
       {/* ===================== DESKTOP POPOVER (>= 768px) ===================== */}
       <div
         ref={menuRef}
+        data-no-tab-swipe="true"
         style={{ left, top }}
-        className="hidden md:block fixed z-50 w-56 rounded-md bg-[#1E1E1E] border border-white/10 shadow-2xl py-1.5 text-sm text-[#EAEAEA] select-none"
+        className="hidden md:block fixed z-[110] w-56 rounded-md bg-[#1E1E1E] border border-white/10 shadow-2xl py-1.5 text-sm text-[#EAEAEA] select-none"
       >
         <button
           type="button"
@@ -257,19 +365,46 @@ export const TrackContextMenu: React.FC<TrackContextMenuProps> = ({
 
       {/* ===================== MOBILE BOTTOM ACTION SHEET (< 768px) ===================== */}
       <div
+        data-no-tab-swipe="true"
+        role="dialog"
+        aria-modal="true"
         onClick={onClose}
-        className="md:hidden fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-end justify-center select-none"
+        style={{
+          backgroundColor: `rgba(0, 0, 0, ${sheetEntered ? backdropAlpha : 0})`,
+        }}
+        className="md:hidden fixed inset-0 z-[110] backdrop-blur-sm flex items-end justify-center select-none transition-colors duration-200 ease-out"
       >
         <div
           ref={sheetRef}
           onClick={(e) => e.stopPropagation()}
-          className="w-full max-h-[82vh] overflow-y-auto rounded-t-2xl bg-[#141414] border-t border-white/10 px-4 pt-3 pb-[calc(1.75rem+env(safe-area-inset-bottom))] shadow-2xl"
+          onTouchStart={handleSheetTouchStart}
+          onTouchMove={handleSheetTouchMove}
+          onTouchEnd={handleSheetTouchEnd}
+          onTouchCancel={handleSheetTouchCancel}
+          style={{
+            transform:
+              sheetDragY > 0
+                ? `translateY(${sheetDragY}px)`
+                : sheetEntered
+                  ? "translateY(0)"
+                  : "translateY(100%)",
+            transition:
+              sheetDragY > 0 || sheetTransition !== "none"
+                ? sheetTransition
+                : "transform 240ms cubic-bezier(0.22, 1, 0.36, 1)",
+          }}
+          className="w-full max-h-[80vh] overflow-y-auto rounded-t-2xl bg-[#141414] border-t border-white/10 px-4 pt-3 pb-[calc(env(safe-area-inset-bottom)+3rem)] shadow-2xl touch-pan-y"
         >
           {/* Sheet Drag Handle */}
-          <div className="w-10 h-1 rounded-full bg-white/25 mx-auto mb-3" />
+          <div data-sheet-handle="true" className="py-1 -mt-1 mb-2 cursor-grab">
+            <div className="w-10 h-1 rounded-full bg-white/25 mx-auto" />
+          </div>
 
           {/* Track Summary Header */}
-          <div className="flex items-center gap-3 pb-3 border-b border-white/10">
+          <div
+            data-sheet-handle="true"
+            className="flex items-center gap-3 pb-3 border-b border-white/10"
+          >
             <img
               src={menu.track.thumbnail}
               alt={menu.track.title}
@@ -447,4 +582,8 @@ export const TrackContextMenu: React.FC<TrackContextMenuProps> = ({
       </div>
     </>
   );
+
+  return typeof document !== "undefined"
+    ? createPortal(content, document.body)
+    : content;
 };

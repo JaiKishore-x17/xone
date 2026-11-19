@@ -346,3 +346,62 @@ export async function getDownloadedTracks(): Promise<Track[]> {
     return records;
   });
 }
+
+export async function mergeScannedDownloads(scanned: Track[]): Promise<Track[]> {
+  if (scanned.length === 0) {
+    return getDownloadedTracks();
+  }
+  return withStore(STORE_DOWNLOADS, "readwrite", async (store) => {
+    for (const item of scanned) {
+      const vid = item.video_id || item.id;
+      if (!vid) continue;
+      const existing = (await promisifyRequest(store.get(vid))) as
+        | Track
+        | undefined;
+      if (!existing) {
+        const record: Track = {
+          ...normalizeTrack(item),
+          id: vid,
+          video_id: vid,
+          downloadedAt: item.downloadedAt || new Date().toISOString(),
+        };
+        await promisifyRequest(store.put(record));
+      } else {
+        const merged: Track = {
+          ...existing,
+          title:
+            existing.title && existing.title !== "Offline Track"
+              ? existing.title
+              : item.title || existing.title,
+          artist:
+            existing.artist && existing.artist !== "Unknown Artist"
+              ? existing.artist
+              : item.artist || existing.artist,
+          duration_seconds:
+            existing.duration_seconds > 0
+              ? existing.duration_seconds
+              : item.duration_seconds || 0,
+          duration:
+            existing.duration && existing.duration !== "0:00"
+              ? existing.duration
+              : item.duration || "0:00",
+          downloadedAt:
+            existing.downloadedAt || item.downloadedAt || new Date().toISOString(),
+        };
+        if (
+          merged.title !== existing.title ||
+          merged.artist !== existing.artist ||
+          merged.duration_seconds !== existing.duration_seconds ||
+          merged.downloadedAt !== existing.downloadedAt
+        ) {
+          await promisifyRequest(store.put(merged));
+        }
+      }
+    }
+    const records = (await promisifyRequest(store.getAll())) as Track[];
+    records.sort((a, b) =>
+      String(b.downloadedAt || "").localeCompare(String(a.downloadedAt || ""))
+    );
+    return records;
+  });
+}

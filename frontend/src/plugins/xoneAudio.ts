@@ -46,6 +46,7 @@ export interface XoneAudioPlugin {
     videoId: string;
   }): Promise<{ deleted?: boolean; videoId?: string }>;
   openDownloadsFolder(): Promise<{ opened: boolean }>;
+  scanOfflineDownloads(): Promise<{ tracks: Track[] }>;
   setVolume(options: { volume: number }): Promise<void>;
   setAudioEffects(options: {
     eightD: boolean;

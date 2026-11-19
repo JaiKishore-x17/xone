@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   Bluetooth,
   Check,
@@ -44,7 +44,19 @@ export const JamModal: React.FC = () => {
   const navigate = usePlayerStore((s) => s.navigate);
   const showToast = usePlayerStore((s) => s.showToast);
 
-  const jamSwipeRef = useRef<{ x: number; y: number } | null>(null);
+  const jamTouchRef = useRef<{
+    startX: number;
+    startY: number;
+    startTime: number;
+    canDragDown: boolean;
+    lockedAxis: "x" | "y" | null;
+  } | null>(null);
+  const jamCardRef = useRef<HTMLDivElement | null>(null);
+  const jamDismissTimerRef = useRef<number | null>(null);
+
+  const [jamEntered, setJamEntered] = useState(false);
+  const [jamDragY, setJamDragY] = useState(0);
+  const [jamTransition, setJamTransition] = useState("none");
 
   const [activeTab, setActiveTab] = useState<"host" | "join">("host");
   const [deviceNameInput, setDeviceNameInput] = useState("");
@@ -91,6 +103,8 @@ export const JamModal: React.FC = () => {
   useEffect(() => {
     if (!isOpen) {
       setErrorMsg(null);
+      setJamDragY(0);
+      setJamTransition("none");
       return;
     }
     const onEsc = (e: KeyboardEvent) => {
@@ -99,6 +113,38 @@ export const JamModal: React.FC = () => {
     window.addEventListener("keydown", onEsc);
     return () => window.removeEventListener("keydown", onEsc);
   }, [isOpen, setJamModalOpen]);
+
+  useLayoutEffect(() => {
+    if (!isOpen) {
+      setJamEntered(false);
+      return;
+    }
+    setJamEntered(false);
+    setJamDragY(0);
+    setJamTransition("none");
+    let cancelled = false;
+    let raf2 = 0;
+    const raf1 = window.requestAnimationFrame(() => {
+      raf2 = window.requestAnimationFrame(() => {
+        if (!cancelled) {
+          setJamEntered(true);
+        }
+      });
+    });
+    return () => {
+      cancelled = true;
+      window.cancelAnimationFrame(raf1);
+      if (raf2) window.cancelAnimationFrame(raf2);
+    };
+  }, [isOpen]);
+
+  useEffect(() => {
+    return () => {
+      if (jamDismissTimerRef.current !== null) {
+        window.clearTimeout(jamDismissTimerRef.current);
+      }
+    };
+  }, []);
 
   // Debounced quick track search inside Jam Modal
   useEffect(() => {
@@ -353,51 +399,144 @@ export const JamModal: React.FC = () => {
     </div>
   );
 
+  const handleJamTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (e.touches.length !== 1) {
+      jamTouchRef.current = null;
+      return;
+    }
+    if (jamDismissTimerRef.current !== null) {
+      window.clearTimeout(jamDismissTimerRef.current);
+      jamDismissTimerRef.current = null;
+    }
+    const target = e.target as HTMLElement | null;
+    if (
+      target?.closest('input, textarea, button[role="switch"], [role="slider"]')
+    ) {
+      jamTouchRef.current = null;
+      return;
+    }
+    const card = jamCardRef.current;
+    const onHeaderOrHandle = Boolean(target?.closest("[data-jam-handle]"));
+    const canDragDown = onHeaderOrHandle || !card || card.scrollTop <= 2;
+    jamTouchRef.current = {
+      startX: e.touches[0].clientX,
+      startY: e.touches[0].clientY,
+      startTime: Date.now(),
+      canDragDown,
+      lockedAxis: null,
+    };
+  };
+
+  const handleJamTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
+    const drag = jamTouchRef.current;
+    if (!drag || e.touches.length !== 1) return;
+    const dx = e.touches[0].clientX - drag.startX;
+    const dy = e.touches[0].clientY - drag.startY;
+    const dist = Math.hypot(dx, dy);
+
+    if (drag.lockedAxis === null && dist >= 8) {
+      if (Math.abs(dy) > Math.abs(dx) * 1.2 && dy > 0 && drag.canDragDown) {
+        drag.lockedAxis = "y";
+      } else if (Math.abs(dx) > Math.abs(dy) * 1.4) {
+        drag.lockedAxis = "x";
+      }
+    }
+
+    if (drag.lockedAxis === "y" && drag.canDragDown && dy > 0) {
+      setJamTransition("none");
+      setJamDragY(dy);
+    }
+  };
+
+  const handleJamTouchEnd = (e: React.TouchEvent<HTMLDivElement>) => {
+    const drag = jamTouchRef.current;
+    jamTouchRef.current = null;
+    if (!drag || e.changedTouches.length === 0) return;
+
+    const deltaX = e.changedTouches[0].clientX - drag.startX;
+    const deltaY = e.changedTouches[0].clientY - drag.startY;
+
+    if (
+      drag.lockedAxis !== "y" &&
+      deltaX > 65 &&
+      Math.abs(deltaX) > Math.abs(deltaY) * 1.5
+    ) {
+      setJamModalOpen(false);
+      navigate({ type: "library" });
+      return;
+    }
+
+    if (drag.lockedAxis === "y" && drag.canDragDown) {
+      const elapsed = Math.max(1, Date.now() - drag.startTime);
+      const velocity = deltaY / elapsed;
+      if (deltaY > 90 || (deltaY > 45 && velocity > 0.65)) {
+        const exitY = typeof window !== "undefined" ? window.innerHeight : 720;
+        setJamTransition("transform 180ms ease-in");
+        setJamDragY(exitY);
+        jamDismissTimerRef.current = window.setTimeout(() => {
+          jamDismissTimerRef.current = null;
+          setJamModalOpen(false);
+        }, 180);
+      } else {
+        setJamTransition("transform 220ms cubic-bezier(0.22, 1, 0.36, 1)");
+        setJamDragY(0);
+      }
+    }
+  };
+
+  const handleJamTouchCancel = () => {
+    jamTouchRef.current = null;
+    setJamTransition("transform 220ms cubic-bezier(0.22, 1, 0.36, 1)");
+    setJamDragY(0);
+  };
+
+  const jamBackdropAlpha =
+    jamDragY > 0 ? Math.max(0.15, 0.8 * (1 - jamDragY / 440)) : 0.8;
+
   return (
     <div
       data-no-tab-swipe="true"
       onClick={() => setJamModalOpen(false)}
-      className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 select-none"
+      style={{
+        backgroundColor: `rgba(0, 0, 0, ${jamEntered ? jamBackdropAlpha : 0})`,
+      }}
+      className="fixed inset-0 z-50 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 select-none transition-all duration-[250ms] ease-out"
     >
       <div
+        ref={jamCardRef}
         onClick={(e) => e.stopPropagation()}
-        onTouchStart={(e) => {
-          if (e.touches.length !== 1) {
-            jamSwipeRef.current = null;
-            return;
-          }
-          const target = e.target as HTMLElement | null;
-          if (
-            target?.closest(
-              'input, textarea, button[role="switch"], [role="slider"]'
-            )
-          ) {
-            jamSwipeRef.current = null;
-            return;
-          }
-          jamSwipeRef.current = {
-            x: e.touches[0].clientX,
-            y: e.touches[0].clientY,
-          };
+        onTouchStart={handleJamTouchStart}
+        onTouchMove={handleJamTouchMove}
+        onTouchEnd={handleJamTouchEnd}
+        onTouchCancel={handleJamTouchCancel}
+        style={{
+          transform:
+            jamDragY > 0
+              ? `translateY(${jamDragY}px)`
+              : jamEntered
+                ? "translateY(0)"
+                : "translateY(32px)",
+          opacity: jamEntered ? 1 : 0,
+          transition:
+            jamDragY > 0 || jamTransition !== "none"
+              ? jamTransition
+              : "transform 250ms ease-out, opacity 250ms ease-out",
         }}
-        onTouchEnd={(e) => {
-          const start = jamSwipeRef.current;
-          jamSwipeRef.current = null;
-          if (!start || e.changedTouches.length === 0) return;
-          const deltaX = e.changedTouches[0].clientX - start.x;
-          const deltaY = e.changedTouches[0].clientY - start.y;
-          if (deltaX > 65 && Math.abs(deltaX) > Math.abs(deltaY) * 1.5) {
-            setJamModalOpen(false);
-            navigate({ type: "library" });
-          }
-        }}
-        onTouchCancel={() => {
-          jamSwipeRef.current = null;
-        }}
-        className="w-full sm:max-w-lg max-h-[90vh] overflow-y-auto rounded-t-2xl sm:rounded-2xl bg-[#141414] border-t sm:border border-white/10 shadow-2xl p-5 pb-[calc(1.5rem+env(safe-area-inset-bottom))] sm:p-6"
+        className="w-full sm:max-w-lg max-h-[90vh] overflow-y-auto rounded-t-2xl sm:rounded-2xl bg-[#141414] border-t sm:border border-white/10 shadow-2xl p-5 pb-[calc(1.5rem+env(safe-area-inset-bottom))] sm:p-6 touch-pan-y"
       >
+        {/* Mobile Drag Handle Pill */}
+        <div
+          data-jam-handle="true"
+          className="sm:hidden py-1 -mt-2 mb-2.5 cursor-grab"
+        >
+          <div className="w-10 h-1 rounded-full bg-white/25 mx-auto" />
+        </div>
+
         {/* Header */}
-        <div className="flex items-center justify-between gap-3 mb-4">
+        <div
+          data-jam-handle="true"
+          className="flex items-center justify-between gap-3 mb-4"
+        >
           <div className="flex items-center gap-2.5 min-w-0">
             <div className="w-9 h-9 rounded-lg bg-[#FF5E4D]/15 border border-[#FF5E4D]/40 flex items-center justify-center shrink-0">
               <Bluetooth size={18} className="text-[#FF5E4D]" />

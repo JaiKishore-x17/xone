@@ -224,6 +224,18 @@ export async function getDownloadedTracks(): Promise<Track[]> {
   return localLibrary.getDownloadedTracks();
 }
 
+export async function syncOfflineDownloads(): Promise<Track[]> {
+  if (!isNativePlatform()) {
+    return localLibrary.getDownloadedTracks();
+  }
+  try {
+    const res = await XoneAudio.scanOfflineDownloads();
+    return localLibrary.mergeScannedDownloads(res.tracks ?? []);
+  } catch {
+    return localLibrary.getDownloadedTracks();
+  }
+}
+
 export async function openDownloadsFolder(): Promise<void> {
   if (!isNativePlatform()) {
     throw new Error("Offline Music/Xone folder is available on Android.");

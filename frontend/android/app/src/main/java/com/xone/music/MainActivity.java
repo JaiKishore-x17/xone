@@ -22,8 +22,14 @@ public class MainActivity extends BridgeActivity {
         void onResult(boolean granted);
     }
 
+    public interface AudioPermissionCallback {
+        void onResult(boolean granted);
+    }
+
     private static final int REQUEST_CODE_BLE_PERMISSIONS = 4109;
+    private static final int REQUEST_CODE_AUDIO_PERMISSIONS = 4110;
     private BlePermissionCallback pendingBlePermissionCallback;
+    private AudioPermissionCallback pendingAudioPermissionCallback;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -101,6 +107,34 @@ public class MainActivity extends BridgeActivity {
         );
     }
 
+    public String getRequiredAudioPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            return Manifest.permission.READ_MEDIA_AUDIO;
+        }
+        return Manifest.permission.READ_EXTERNAL_STORAGE;
+    }
+
+    public boolean hasAudioStoragePermission() {
+        return ContextCompat.checkSelfPermission(this, getRequiredAudioPermission())
+            == PackageManager.PERMISSION_GRANTED;
+    }
+
+    public void ensureAudioStoragePermission(@NonNull AudioPermissionCallback callback) {
+        if (hasAudioStoragePermission()) {
+            callback.onResult(true);
+            return;
+        }
+        if (pendingAudioPermissionCallback != null) {
+            pendingAudioPermissionCallback.onResult(false);
+        }
+        pendingAudioPermissionCallback = callback;
+        ActivityCompat.requestPermissions(
+            this,
+            new String[] { getRequiredAudioPermission() },
+            REQUEST_CODE_AUDIO_PERMISSIONS
+        );
+    }
+
     @Override
     public void onRequestPermissionsResult(
         int requestCode,
@@ -112,6 +146,11 @@ public class MainActivity extends BridgeActivity {
             BlePermissionCallback callback = pendingBlePermissionCallback;
             pendingBlePermissionCallback = null;
             boolean granted = grantResults.length > 0 && hasBlePermissions();
+            callback.onResult(granted);
+        } else if (requestCode == REQUEST_CODE_AUDIO_PERMISSIONS && pendingAudioPermissionCallback != null) {
+            AudioPermissionCallback callback = pendingAudioPermissionCallback;
+            pendingAudioPermissionCallback = null;
+            boolean granted = grantResults.length > 0 && hasAudioStoragePermission();
             callback.onResult(granted);
         }
     }

@@ -3,8 +3,10 @@ package com.xone.music
 import android.app.DownloadManager
 import android.content.ActivityNotFoundException
 import android.content.ComponentName
+import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Intent
+import android.media.MediaMetadataRetriever
 import android.media.MediaScannerConnection
 import android.net.Uri
 import android.os.Build
@@ -44,7 +46,10 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
 import java.net.SocketException
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
+import java.util.TimeZone
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
@@ -747,6 +752,311 @@ class XoneAudioPlugin : Plugin() {
         }
     }
 
+    @PluginMethod
+    fun scanOfflineDownloads(call: PluginCall) {
+        mainHandler.post {
+            val hostActivity = activity as? MainActivity
+            if (hostActivity != null) {
+                hostActivity.ensureAudioStoragePermission {
+                    runOfflineDownloadsScan(call)
+                }
+            } else {
+                runOfflineDownloadsScan(call)
+            }
+        }
+    }
+
+    private fun runOfflineDownloadsScan(call: PluginCall) {
+        pluginScope.launch(Dispatchers.IO) {
+            try {
+                val discovered = LinkedHashMap<String, JSObject>()
+                val publicDir = XonePlaybackService.getPublicMusicXoneDir()
+                val dirFiles = if (publicDir.exists() && publicDir.isDirectory) {
+                    publicDir.listFiles()?.filter {
+                        it.isFile && it.length() > 0L && !it.name.endsWith(".tmp")
+                    } ?: emptyList()
+                } else {
+                    emptyList()
+                }
+
+                if (dirFiles.isNotEmpty()) {
+                    MediaScannerConnection.scanFile(
+                        context,
+                        dirFiles.map { it.absolutePath }.toTypedArray(),
+                        null,
+                        null
+                    )
+                }
+
+                // 1. Primary scan via MediaStore (works across reinstalls on Android 10–15+)
+                val projectionList = mutableListOf(
+                    MediaStore.Audio.Media._ID,
+                    MediaStore.Audio.Media.DISPLAY_NAME,
+                    MediaStore.Audio.Media.TITLE,
+                    MediaStore.Audio.Media.ARTIST,
+                    MediaStore.Audio.Media.ALBUM,
+                    MediaStore.Audio.Media.DURATION,
+                    MediaStore.Audio.Media.SIZE,
+                    MediaStore.Audio.Media.DATE_MODIFIED
+                )
+                val selection: String
+                val selectionArgs: Array<String>
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    projectionList.add(MediaStore.Audio.Media.RELATIVE_PATH)
+                    selection =
+                        "${MediaStore.Audio.Media.RELATIVE_PATH} LIKE ? AND " +
+                            "${MediaStore.Audio.Media.IS_PENDING} = 0 AND " +
+                            "${MediaStore.Audio.Media.SIZE} > 0"
+                    selectionArgs = arrayOf("%Music/Xone%")
+                } else {
+                    @Suppress("DEPRECATION")
+                    val dataCol = MediaStore.Audio.Media.DATA
+                    projectionList.add(dataCol)
+                    selection = "$dataCol LIKE ? AND ${MediaStore.Audio.Media.SIZE} > 0"
+                    selectionArgs = arrayOf("%/Music/Xone/%")
+                }
+
+                runCatching {
+                    context.contentResolver.query(
+                        MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                        projectionList.toTypedArray(),
+                        selection,
+                        selectionArgs,
+                        "${MediaStore.Audio.Media.DATE_MODIFIED} DESC"
+                    )?.use { cursor ->
+                        val idIdx = cursor.getColumnIndex(MediaStore.Audio.Media._ID)
+                        val nameIdx = cursor.getColumnIndex(MediaStore.Audio.Media.DISPLAY_NAME)
+                        val titleIdx = cursor.getColumnIndex(MediaStore.Audio.Media.TITLE)
+                        val artistIdx = cursor.getColumnIndex(MediaStore.Audio.Media.ARTIST)
+                        val albumIdx = cursor.getColumnIndex(MediaStore.Audio.Media.ALBUM)
+                        val durationIdx = cursor.getColumnIndex(MediaStore.Audio.Media.DURATION)
+                        val modifiedIdx = cursor.getColumnIndex(MediaStore.Audio.Media.DATE_MODIFIED)
+
+                        while (cursor.moveToNext()) {
+                            val id = if (idIdx >= 0) cursor.getLong(idIdx) else -1L
+                            val displayName =
+                                if (nameIdx >= 0) cursor.getString(nameIdx).orEmpty() else ""
+                            val videoId = extractVideoIdFromName(displayName)
+                            if (videoId.isEmpty() || discovered.containsKey(videoId)) continue
+
+                            val contentUri = if (id >= 0L) {
+                                ContentUris.withAppendedId(
+                                    MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                                    id
+                                )
+                            } else {
+                                null
+                            }
+
+                            val storeTitle =
+                                if (titleIdx >= 0) cursor.getString(titleIdx).orEmpty() else ""
+                            val storeArtist =
+                                if (artistIdx >= 0) cursor.getString(artistIdx).orEmpty() else ""
+                            val storeAlbum =
+                                if (albumIdx >= 0) cursor.getString(albumIdx).orEmpty() else ""
+                            val storeDurationMs =
+                                if (durationIdx >= 0) cursor.getLong(durationIdx) else 0L
+                            val modifiedSec =
+                                if (modifiedIdx >= 0) cursor.getLong(modifiedIdx) else 0L
+
+                            val itemObj = buildScannedTrackJSObject(
+                                videoId = videoId,
+                                displayName = displayName,
+                                storeTitle = storeTitle,
+                                storeArtist = storeArtist,
+                                storeAlbum = storeAlbum,
+                                durationMs = storeDurationMs,
+                                modifiedMs = modifiedSec * 1000L,
+                                contentUri = contentUri,
+                                file = null
+                            )
+                            discovered[videoId] = itemObj
+                        }
+                    }
+                }
+
+                // 2. Direct filesystem fallback for Music/Xone and legacy offline_tracks
+                for (file in dirFiles) {
+                    val videoId = extractVideoIdFromName(file.name)
+                    if (videoId.isNotEmpty() && !discovered.containsKey(videoId)) {
+                        discovered[videoId] = buildScannedTrackJSObject(
+                            videoId = videoId,
+                            displayName = file.name,
+                            storeTitle = "",
+                            storeArtist = "",
+                            storeAlbum = "",
+                            durationMs = 0L,
+                            modifiedMs = file.lastModified(),
+                            contentUri = null,
+                            file = file
+                        )
+                    }
+                }
+
+                val legacyDir = File(context.filesDir, OFFLINE_TRACKS_DIR)
+                if (legacyDir.exists() && legacyDir.isDirectory) {
+                    legacyDir.listFiles()?.forEach { file ->
+                        if (file.isFile && file.length() > 0L && file.name.endsWith(".audio")) {
+                            val videoId = XonePlaybackService.sanitizeVideoId(
+                                file.name.removeSuffix(".audio")
+                            )
+                            if (videoId.isNotEmpty() && !discovered.containsKey(videoId)) {
+                                discovered[videoId] = buildScannedTrackJSObject(
+                                    videoId = videoId,
+                                    displayName = file.name,
+                                    storeTitle = "",
+                                    storeArtist = "",
+                                    storeAlbum = "",
+                                    durationMs = 0L,
+                                    modifiedMs = file.lastModified(),
+                                    contentUri = null,
+                                    file = file
+                                )
+                            }
+                        }
+                    }
+                }
+
+                val tracksArr = JSArray()
+                for (trackObj in discovered.values) {
+                    tracksArr.put(trackObj)
+                }
+                call.resolve(JSObject().put("tracks", tracksArr))
+            } catch (ex: Exception) {
+                call.reject(ex.localizedMessage ?: "Failed to scan offline downloads", ex)
+            }
+        }
+    }
+
+    private fun extractVideoIdFromName(fileName: String): String {
+        val bracketMatch = DOWNLOAD_VIDEO_ID_REGEX.find(fileName)
+        if (bracketMatch != null) {
+            return XonePlaybackService.sanitizeVideoId(bracketMatch.groupValues[1])
+        }
+        val stem = fileName.substringBeforeLast('.', fileName)
+        return XonePlaybackService.sanitizeVideoId(stem)
+    }
+
+    private fun buildScannedTrackJSObject(
+        videoId: String,
+        displayName: String,
+        storeTitle: String,
+        storeArtist: String,
+        storeAlbum: String,
+        durationMs: Long,
+        modifiedMs: Long,
+        contentUri: Uri?,
+        file: File?
+    ): JSObject {
+        val rawStem = displayName.substringBeforeLast('.', displayName)
+        val withoutId = rawStem.replace(DOWNLOAD_VIDEO_ID_REGEX, "").trim()
+        val splitIdx = withoutId.indexOf(" - ")
+        val parsedArtist = if (splitIdx > 0) withoutId.substring(0, splitIdx).trim() else ""
+        val parsedTitle = if (splitIdx > 0) {
+            withoutId.substring(splitIdx + 3).trim()
+        } else {
+            withoutId
+        }
+
+        var metaTitle = cleanMetadataText(storeTitle)
+        var metaArtist = cleanMetadataText(storeArtist)
+        var metaAlbum = cleanMetadataText(storeAlbum)
+        var effectiveDurationMs = durationMs
+
+        val needsRetriever =
+            metaTitle.isEmpty() || metaArtist.isEmpty() || effectiveDurationMs <= 0L
+        if (needsRetriever) {
+            val retriever = MediaMetadataRetriever()
+            try {
+                if (contentUri != null) {
+                    retriever.setDataSource(context, contentUri)
+                } else if (file != null) {
+                    retriever.setDataSource(file.absolutePath)
+                }
+                if (metaTitle.isEmpty()) {
+                    metaTitle = cleanMetadataText(
+                        retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)
+                    )
+                }
+                if (metaArtist.isEmpty()) {
+                    metaArtist = cleanMetadataText(
+                        retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST)
+                    )
+                }
+                if (metaAlbum.isEmpty()) {
+                    metaAlbum = cleanMetadataText(
+                        retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM)
+                    )
+                }
+                if (effectiveDurationMs <= 0L) {
+                    effectiveDurationMs = retriever
+                        .extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                        ?.toLongOrNull() ?: 0L
+                }
+            } catch (_: Exception) {
+                // ignore unreadable metadata tags; filename parsing handles fallback
+            } finally {
+                runCatching { retriever.release() }
+            }
+        }
+
+        val finalTitle = when {
+            metaTitle.isNotEmpty() && metaTitle != rawStem -> metaTitle
+            parsedTitle.isNotEmpty() && parsedTitle != videoId -> parsedTitle
+            metaTitle.isNotEmpty() -> metaTitle
+            else -> "Offline Track"
+        }
+        val finalArtist = when {
+            metaArtist.isNotEmpty() -> metaArtist
+            parsedArtist.isNotEmpty() -> parsedArtist
+            else -> "Unknown Artist"
+        }
+
+        val durationSeconds = (effectiveDurationMs / 1000L).toInt().coerceAtLeast(0)
+        val artistsArr = JSArray()
+        for (part in finalArtist.split(",")) {
+            val trimmed = part.trim()
+            if (trimmed.isNotEmpty()) artistsArr.put(trimmed)
+        }
+        if (artistsArr.length() == 0) {
+            artistsArr.put(finalArtist)
+        }
+
+        val isoFormatter = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply {
+            timeZone = TimeZone.getTimeZone("UTC")
+        }
+        val tsMs = if (modifiedMs > 0L) modifiedMs else System.currentTimeMillis()
+        val downloadedAt = isoFormatter.format(Date(tsMs))
+
+        return JSObject().apply {
+            put("id", videoId)
+            put("video_id", videoId)
+            put("title", finalTitle)
+            put("artist", finalArtist)
+            put("artists", artistsArr)
+            put("album", metaAlbum.ifEmpty { "Offline Downloads" })
+            put("album_id", JSObject.NULL)
+            put("thumbnail", "https://i.ytimg.com/vi/$videoId/hqdefault.jpg")
+            put("duration", formatSeconds(durationSeconds))
+            put("duration_seconds", durationSeconds)
+            put("video_type", "MUSIC_VIDEO_TYPE_ATV")
+            put("downloadedAt", downloadedAt)
+        }
+    }
+
+    private fun cleanMetadataText(value: String?): String {
+        val trimmed = value?.trim().orEmpty()
+        return if (
+            trimmed.isEmpty() ||
+            trimmed.equals("<unknown>", ignoreCase = true) ||
+            trimmed.equals("unknown", ignoreCase = true)
+        ) {
+            ""
+        } else {
+            trimmed
+        }
+    }
+
     private suspend fun writeStreamToPublicMusicXone(
         videoId: String,
         fileName: String,
@@ -1038,6 +1348,7 @@ class XoneAudioPlugin : Plugin() {
         private const val YTM_REFERER = "https://music.youtube.com/"
         private val CONTENT_RANGE_REGEX =
             Regex("bytes\\s+\\d+-\\d+/(\\d+)", RegexOption.IGNORE_CASE)
+        private val DOWNLOAD_VIDEO_ID_REGEX = Regex("\\[([a-zA-Z0-9_-]{6,20})\\]")
         private val FILE_NAME_UNSAFE_REGEX = Regex("[\\\\/:*?\"<>|\\p{Cntrl}]+")
         private val WHITESPACE_COLLAPSE_REGEX = Regex("\\s+")
     }
