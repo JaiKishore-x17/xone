@@ -45,7 +45,7 @@ export const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose }) => {
                 Xone
               </h2>
               <span className="inline-flex items-center mt-1 px-2.5 py-0.5 rounded-full bg-[#1E1E1E] border border-[#FF5E4D]/30 text-[11px] font-semibold text-[#FF5E4D]">
-                v1.1.0 • Android
+                v1.1.4 • Android
               </span>
             </div>
           </div>

@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { usePlayerStore } from "../store/usePlayerStore";
 import { formatTotalDuration, getTimeGreeting } from "../utils/format";
+import { SwipeableTrackRow } from "./SwipeableTrackRow";
 import { TrackArtwork } from "./TrackArtwork";
 import { TrackContextMenu, type ContextMenuState } from "./TrackContextMenu";
 import { TrackRow } from "./TrackRow";
@@ -424,54 +425,55 @@ export const MainView: React.FC = () => {
                     const isTrackActive =
                       currentTrack?.video_id === track.video_id;
                     return (
-                      <div
-                        key={track.video_id}
-                        role="button"
-                        tabIndex={0}
-                        onClick={() => {
-                          addRecentSearchTrack(track);
-                          playTrack(track, recentSearches);
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" || e.key === " ") {
-                            e.preventDefault();
+                      <SwipeableTrackRow key={track.video_id} track={track}>
+                        <div
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => {
                             addRecentSearchTrack(track);
                             playTrack(track, recentSearches);
-                          }
-                        }}
-                        className="group flex items-center gap-3 px-2.5 md:px-3 py-2 rounded-lg hover:bg-[#1E1E1E] active:bg-[#1E1E1E] cursor-pointer transition-colors"
-                      >
-                        <TrackArtwork
-                          src={track.thumbnail}
-                          alt={track.title}
-                          iconSize={18}
-                          className="w-11 h-11 rounded object-cover shrink-0 bg-[#141414]"
-                        />
-                        <div className="min-w-0 flex-1">
-                          <p
-                            className={`text-sm font-semibold truncate ${
-                              isTrackActive ? "text-[#FF5E4D]" : "text-white"
-                            }`}
-                          >
-                            {track.title}
-                          </p>
-                          <p className="text-xs text-[#B3B3B3] truncate">
-                            {track.artist}
-                            {track.duration ? ` • ${track.duration}` : ""}
-                          </p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            removeRecentSearchTrack(track.video_id);
                           }}
-                          aria-label={`Remove ${track.title} from recent searches`}
-                          className="min-w-[40px] min-h-[40px] flex items-center justify-center rounded-full text-[#727272] hover:text-white active:bg-white/10 transition-colors shrink-0"
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              addRecentSearchTrack(track);
+                              playTrack(track, recentSearches);
+                            }
+                          }}
+                          className="group flex items-center gap-3 px-2.5 md:px-3 py-2 rounded-lg hover:bg-[#1E1E1E] active:bg-[#1E1E1E] cursor-pointer transition-colors"
                         >
-                          <X size={16} />
-                        </button>
-                      </div>
+                          <TrackArtwork
+                            src={track.thumbnail}
+                            alt={track.title}
+                            iconSize={18}
+                            className="w-11 h-11 rounded object-cover shrink-0 bg-[#141414]"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <p
+                              className={`text-sm font-semibold truncate ${
+                                isTrackActive ? "text-[#FF5E4D]" : "text-white"
+                              }`}
+                            >
+                              {track.title}
+                            </p>
+                            <p className="text-xs text-[#B3B3B3] truncate">
+                              {track.artist}
+                              {track.duration ? ` • ${track.duration}` : ""}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              removeRecentSearchTrack(track.video_id);
+                            }}
+                            aria-label={`Remove ${track.title} from recent searches`}
+                            className="min-w-[40px] min-h-[40px] flex items-center justify-center rounded-full text-[#727272] hover:text-white active:bg-white/10 transition-colors shrink-0"
+                          >
+                            <X size={16} />
+                          </button>
+                        </div>
+                      </SwipeableTrackRow>
                     );
                   })}
                 </div>
@@ -626,12 +628,13 @@ export const MainView: React.FC = () => {
                 </h2>
                 <div className="space-y-1">
                   {songs.slice(0, 4).map((track, idx) => (
-                    <TrackRow
-                      key={track.video_id}
-                      track={track}
-                      index={idx}
-                      onOpenContextMenu={setContextMenu}
-                    />
+                    <SwipeableTrackRow key={track.video_id} track={track}>
+                      <TrackRow
+                        track={track}
+                        index={idx}
+                        onOpenContextMenu={setContextMenu}
+                      />
+                    </SwipeableTrackRow>
                   ))}
                 </div>
               </div>
@@ -647,12 +650,13 @@ export const MainView: React.FC = () => {
               {renderPlayableListHeader()}
               <div className="space-y-0.5">
                 {songs.map((track, idx) => (
-                  <TrackRow
-                    key={track.video_id}
-                    track={track}
-                    index={idx}
-                    onOpenContextMenu={setContextMenu}
-                  />
+                  <SwipeableTrackRow key={track.video_id} track={track}>
+                    <TrackRow
+                      track={track}
+                      index={idx}
+                      onOpenContextMenu={setContextMenu}
+                    />
+                  </SwipeableTrackRow>
                 ))}
               </div>
             </div>

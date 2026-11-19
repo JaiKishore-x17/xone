@@ -890,14 +890,21 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     }
 
     const insertAt = Math.max(0, state.queueIndex + 1);
-    const updatedQueue = [...state.queue];
-    updatedQueue.splice(insertAt, 0, track);
+    const beforeQueue = state.queue.slice(0, insertAt);
+    const afterQueue = state.queue
+      .slice(insertAt)
+      .filter((t) => t.video_id !== track.video_id);
+    const updatedQueue = [...beforeQueue, track, ...afterQueue];
 
-    const updatedOriginal = [...state.originalQueue];
     const origIdx = state.originalQueue.findIndex(
       (t) => t.video_id === state.currentTrack?.video_id
     );
-    updatedOriginal.splice(origIdx >= 0 ? origIdx + 1 : updatedOriginal.length, 0, track);
+    const origInsertAt = origIdx >= 0 ? origIdx + 1 : state.originalQueue.length;
+    const beforeOrig = state.originalQueue.slice(0, origInsertAt);
+    const afterOrig = state.originalQueue
+      .slice(origInsertAt)
+      .filter((t) => t.video_id !== track.video_id);
+    const updatedOriginal = [...beforeOrig, track, ...afterOrig];
 
     set({
       queue: updatedQueue,
@@ -908,22 +915,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   addToQueue: (track) => {
-    const state = get();
-    if (state.jamState.active) {
-      void state.addTrackToJamSession(track);
-      return;
-    }
-    if (!state.currentTrack || state.queue.length === 0) {
-      state.playTrack(track, [track]);
-      state.showToast(`Playing "${track.title}"`);
-      return;
-    }
-
-    set({
-      queue: [...state.queue, track],
-      originalQueue: [...state.originalQueue, track],
-    });
-    state.showToast(`Added "${track.title}" to queue`);
+    get().playNextInQueue(track);
   },
 
   removeFromQueue: (index) => {
