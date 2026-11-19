@@ -137,6 +137,7 @@ interface PlayerState {
   isNewPlaylistModalOpen: boolean;
   isJamModalOpen: boolean;
   isMobilePlayerExpanded: boolean;
+  isKeyboardOpen: boolean;
   isJamBusy: boolean;
   jamState: JamState;
   toastMessage: string | null;
@@ -196,6 +197,7 @@ interface PlayerState {
   setNewPlaylistModalOpen: (open: boolean) => void;
   setJamModalOpen: (open: boolean) => void;
   setMobilePlayerExpanded: (open: boolean) => void;
+  setKeyboardOpen: (open: boolean) => void;
   setJamState: (state: JamState) => void;
   startJamSession: (deviceName?: string) => Promise<void>;
   joinJamSession: (code: string, deviceName?: string) => Promise<void>;
@@ -252,6 +254,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   isNewPlaylistModalOpen: false,
   isJamModalOpen: false,
   isMobilePlayerExpanded: false,
+  isKeyboardOpen: false,
   isJamBusy: false,
   jamState: EMPTY_JAM_STATE,
   toastMessage: null,
@@ -269,6 +272,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   setNewPlaylistModalOpen: (open) => set({ isNewPlaylistModalOpen: open }),
   setJamModalOpen: (open) => set({ isJamModalOpen: open }),
   setMobilePlayerExpanded: (open) => set({ isMobilePlayerExpanded: open }),
+  setKeyboardOpen: (open) => set({ isKeyboardOpen: open }),
   setJamState: (jamState) => {
     const isActive = Boolean(jamState.active || jamState.isActive);
     const normalized: JamState = {

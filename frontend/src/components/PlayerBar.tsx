@@ -20,6 +20,7 @@ import {
 import { usePlayerStore } from "../store/usePlayerStore";
 import { formatTime } from "../utils/format";
 import { DownloadStatusIcon } from "./DownloadStatusIcon";
+import { TrackArtwork } from "./TrackArtwork";
 import { TrackContextMenu, type ContextMenuState } from "./TrackContextMenu";
 
 export const PlayerBar: React.FC = () => {
@@ -39,6 +40,7 @@ export const PlayerBar: React.FC = () => {
   const playbackError = usePlayerStore((s) => s.playbackError);
   const activeView = usePlayerStore((s) => s.activeView);
   const jamState = usePlayerStore((s) => s.jamState);
+  const isKeyboardOpen = usePlayerStore((s) => s.isKeyboardOpen);
   const eightDEnabled = usePlayerStore((s) => s.eightDEnabled);
   const srEnabled = usePlayerStore((s) => s.srEnabled);
 
@@ -467,11 +469,22 @@ export const PlayerBar: React.FC = () => {
             if (e.key === "Enter") setIsMobileExpanded(true);
           }}
           style={{
-            transform: miniDragY < 0 ? `translateY(${miniDragY}px)` : undefined,
-            transition: miniYTransition,
+            transform: isKeyboardOpen
+              ? "translateY(140%)"
+              : miniDragY < 0
+                ? `translateY(${miniDragY}px)`
+                : undefined,
+            transition: isKeyboardOpen
+              ? "transform 150ms ease-out, opacity 150ms ease-out"
+              : miniYTransition !== "none"
+                ? `${miniYTransition}, opacity 150ms ease-out`
+                : "opacity 150ms ease-out",
           }}
+          aria-hidden={isKeyboardOpen}
           aria-label="Open full-screen now playing controls"
-          className="fixed bottom-[calc(3.5rem+env(safe-area-inset-bottom))] left-2 right-2 z-40 md:hidden rounded-lg bg-[#141414] border border-white/10 p-2 shadow-2xl overflow-hidden select-none cursor-pointer touch-none"
+          className={`fixed bottom-[calc(3.5rem+env(safe-area-inset-bottom))] left-2 right-2 z-40 md:hidden rounded-lg bg-[#141414] border border-white/10 p-2 shadow-2xl overflow-hidden select-none cursor-pointer touch-none ${
+            isKeyboardOpen ? "opacity-0 pointer-events-none" : "opacity-100"
+          }`}
         >
           <div className="flex items-center gap-2.5">
             <div className="flex-1 min-w-0 overflow-hidden">
@@ -484,9 +497,10 @@ export const PlayerBar: React.FC = () => {
                 className="flex items-center gap-2.5 min-w-0"
               >
                 <div className="relative w-10 h-10 rounded overflow-hidden shrink-0 bg-black">
-                  <img
+                  <TrackArtwork
                     src={currentTrack.thumbnail}
                     alt={currentTrack.title}
+                    iconSize={16}
                     className="w-full h-full object-cover"
                   />
                   {isBuffering && (
@@ -641,9 +655,10 @@ export const PlayerBar: React.FC = () => {
           {/* Large Centered Artwork */}
           <div className="my-4 flex-1 flex items-center justify-center">
             <div className="relative w-full max-w-[320px] aspect-square rounded-xl overflow-hidden shadow-2xl bg-[#141414]">
-              <img
+              <TrackArtwork
                 src={currentTrack.thumbnail}
                 alt={currentTrack.title}
+                iconSize={52}
                 className="w-full h-full object-cover"
               />
               {isBuffering && (
@@ -896,9 +911,10 @@ export const PlayerBar: React.FC = () => {
           {currentTrack ? (
             <>
               <div className="relative w-14 h-14 rounded-md overflow-hidden shrink-0 bg-[#141414] shadow-lg">
-                <img
+                <TrackArtwork
                   src={currentTrack.thumbnail}
                   alt={currentTrack.title}
+                  iconSize={20}
                   className="w-full h-full object-cover"
                 />
                 {isBuffering && (

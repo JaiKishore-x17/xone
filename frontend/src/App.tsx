@@ -1,4 +1,5 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Capacitor, registerPlugin, type PluginListenerHandle } from "@capacitor/core";
 import { AudioEngine } from "./components/AudioEngine";
 import { JamModal } from "./components/JamModal";
 import { MainView } from "./components/MainView";
@@ -17,6 +18,19 @@ function getTabIndex(view: ActiveView, isJamModalOpen: boolean): number {
   return 2;
 }
 
+interface KeyboardPluginLike {
+  addListener(
+    eventName:
+      | "keyboardWillShow"
+      | "keyboardDidShow"
+      | "keyboardWillHide"
+      | "keyboardDidHide",
+    listenerFunc: () => void
+  ): Promise<PluginListenerHandle>;
+}
+
+const CapacitorKeyboard = registerPlugin<KeyboardPluginLike>("Keyboard");
+
 export const App: React.FC = () => {
   const fetchLibrary = usePlayerStore((s) => s.fetchLibrary);
   const toastMessage = usePlayerStore((s) => s.toastMessage);
@@ -26,6 +40,7 @@ export const App: React.FC = () => {
   const isNewPlaylistModalOpen = usePlayerStore((s) => s.isNewPlaylistModalOpen);
   const navigate = usePlayerStore((s) => s.navigate);
   const setJamModalOpen = usePlayerStore((s) => s.setJamModalOpen);
+  const setKeyboardOpen = usePlayerStore((s) => s.setKeyboardOpen);
 
   const currentTabIndex = getTabIndex(activeView, isJamModalOpen);
   const prevTabIndexRef = useRef<number>(currentTabIndex);
@@ -37,6 +52,122 @@ export const App: React.FC = () => {
   useEffect(() => {
     void fetchLibrary();
   }, [fetchLibrary]);
+
+  // Detect soft keyboard visibility via Capacitor Keyboard events + visualViewport height fallback
+  useEffect(() => {
+    let mounted = true;
+    let baselineHeight =
+      window.visualViewport?.height ?? window.innerHeight;
+    let baselineWidth =
+      window.visualViewport?.width ?? window.innerWidth;
+    let nativeKeyboardActive = false;
+    let focusRecheckTimers: number[] = [];
+
+    const isTextInputFocused = (): boolean => {
+      const el = document.activeElement as HTMLElement | null;
+      if (!el) return false;
+      const tag = el.tagName;
+      return (
+        tag === "INPUT" ||
+        tag === "TEXTAREA" ||
+        el.isContentEditable
+      );
+    };
+
+    const syncFromViewport = () => {
+      if (!mounted) return;
+      const curWidth = window.visualViewport?.width ?? window.innerWidth;
+      const curHeight = window.visualViewport?.height ?? window.innerHeight;
+
+      // Reset baseline when orientation changes or when viewport expands back while unfocused
+      if (Math.abs(curWidth - baselineWidth) > 80) {
+        baselineWidth = curWidth;
+        baselineHeight = curHeight;
+      } else if (!isTextInputFocused() && curHeight > baselineHeight) {
+        baselineHeight = curHeight;
+      }
+
+      const shrunkRelativeToWindow =
+        curHeight < window.innerHeight * 0.75;
+      const shrunkWhileFocused =
+        isTextInputFocused() && curHeight < baselineHeight * 0.78;
+
+      const nextOpen =
+        nativeKeyboardActive || shrunkRelativeToWindow || shrunkWhileFocused;
+      setKeyboardOpen(nextOpen);
+    };
+
+    const handleKeyboardShow = () => {
+      nativeKeyboardActive = true;
+      if (mounted) setKeyboardOpen(true);
+    };
+
+    const handleKeyboardHide = () => {
+      nativeKeyboardActive = false;
+      if (mounted) setKeyboardOpen(false);
+    };
+
+    const handleFocusIn = (e: FocusEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+      const tag = target.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || target.isContentEditable) {
+        syncFromViewport();
+        focusRecheckTimers.forEach((id) => window.clearTimeout(id));
+        focusRecheckTimers = [
+          window.setTimeout(syncFromViewport, 150),
+          window.setTimeout(syncFromViewport, 350),
+        ];
+      }
+    };
+
+    const handleFocusOut = () => {
+      window.setTimeout(() => {
+        if (!mounted) return;
+        if (!isTextInputFocused() && !nativeKeyboardActive) {
+          setKeyboardOpen(false);
+        } else {
+          syncFromViewport();
+        }
+      }, 90);
+    };
+
+    window.addEventListener("keyboardWillShow", handleKeyboardShow);
+    window.addEventListener("keyboardDidShow", handleKeyboardShow);
+    window.addEventListener("keyboardWillHide", handleKeyboardHide);
+    window.addEventListener("keyboardDidHide", handleKeyboardHide);
+    window.addEventListener("focusin", handleFocusIn);
+    window.addEventListener("focusout", handleFocusOut);
+    window.visualViewport?.addEventListener("resize", syncFromViewport);
+    window.addEventListener("resize", syncFromViewport);
+
+    const pluginHandles: Array<Promise<PluginListenerHandle>> = [];
+    if (Capacitor.isNativePlatform() && Capacitor.isPluginAvailable("Keyboard")) {
+      pluginHandles.push(
+        CapacitorKeyboard.addListener("keyboardWillShow", handleKeyboardShow),
+        CapacitorKeyboard.addListener("keyboardDidShow", handleKeyboardShow),
+        CapacitorKeyboard.addListener("keyboardWillHide", handleKeyboardHide),
+        CapacitorKeyboard.addListener("keyboardDidHide", handleKeyboardHide)
+      );
+    }
+
+    return () => {
+      mounted = false;
+      focusRecheckTimers.forEach((id) => window.clearTimeout(id));
+      window.removeEventListener("keyboardWillShow", handleKeyboardShow);
+      window.removeEventListener("keyboardDidShow", handleKeyboardShow);
+      window.removeEventListener("keyboardWillHide", handleKeyboardHide);
+      window.removeEventListener("keyboardDidHide", handleKeyboardHide);
+      window.removeEventListener("focusin", handleFocusIn);
+      window.removeEventListener("focusout", handleFocusOut);
+      window.visualViewport?.removeEventListener("resize", syncFromViewport);
+      window.removeEventListener("resize", syncFromViewport);
+      pluginHandles.forEach((p) => {
+        void p.then((h) => h.remove()).catch(() => {});
+      });
+      setKeyboardOpen(false);
+    };
+  }, [setKeyboardOpen]);
 
   useLayoutEffect(() => {
     const prev = prevTabIndexRef.current;

@@ -25,6 +25,7 @@ import {
 } from "../services/xoneJam";
 import { usePlayerStore } from "../store/usePlayerStore";
 import type { Track } from "../types";
+import { TrackArtwork } from "./TrackArtwork";
 
 export const JamModal: React.FC = () => {
   const isOpen = usePlayerStore((s) => s.isJamModalOpen);
@@ -293,9 +294,10 @@ export const JamModal: React.FC = () => {
                 key={track.video_id}
                 className="flex items-center gap-2.5 p-2 hover:bg-[#1E1E1E] transition-colors"
               >
-                <img
+                <TrackArtwork
                   src={track.thumbnail}
                   alt={track.title}
+                  iconSize={14}
                   className="w-9 h-9 rounded object-cover shrink-0 bg-[#141414]"
                 />
                 <div className="min-w-0 flex-1">
@@ -363,9 +365,10 @@ export const JamModal: React.FC = () => {
                       : ""
                   } ${isActiveTrack ? "bg-[#1E1E1E]/70" : ""}`}
                 >
-                  <img
+                  <TrackArtwork
                     src={item.thumbnail}
                     alt={item.title}
+                    iconSize={16}
                     className="w-10 h-10 rounded object-cover shrink-0 bg-[#141414]"
                   />
                   <div className="min-w-0 flex-1">

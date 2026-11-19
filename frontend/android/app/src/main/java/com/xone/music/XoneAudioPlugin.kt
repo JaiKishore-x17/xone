@@ -480,7 +480,7 @@ class XoneAudioPlugin : Plugin() {
                 service?.setEightDEnabled(eightD)
                 service?.setSlowedReverbEnabled(slowedReverb)
                 ctrl.playbackParameters = if (slowedReverb) {
-                    PlaybackParameters(0.84f, 0.88f)
+                    PlaybackParameters(0.87f, 0.88f)
                 } else {
                     PlaybackParameters(1.0f, 1.0f)
                 }

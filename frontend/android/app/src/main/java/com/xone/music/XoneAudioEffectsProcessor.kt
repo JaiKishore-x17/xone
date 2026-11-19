@@ -44,6 +44,9 @@ class XoneAudioEffectsProcessor : BaseAudioProcessor() {
 
     // 8D spatial state & delay ring buffers
     private var lfoPhase: Double = 0.0
+    private var lpfLeft: Float = 0f
+    private var lpfRight: Float = 0f
+    private var headShadowMinAlpha: Float = 0.30f
     private var delayBufferL: FloatArray = FloatArray(1)
     private var delayBufferR: FloatArray = FloatArray(1)
     private var delayWriteIdx: Int = 0
@@ -134,7 +137,7 @@ class XoneAudioEffectsProcessor : BaseAudioProcessor() {
         if (frameCount <= 0) return
 
         val outBuffer = replaceOutputBuffer(frameCount * 4)
-        val lfoIncrement = (2.0 * PI * EIGHT_D_LFO_HZ) / sampleRate.toDouble()
+        val lfoIncrement = (2.0 * PI) / (EIGHT_D_ORBIT_PERIOD_SEC.toDouble() * sampleRate.toDouble())
         val combNorm = 0.25f
 
         for (i in 0 until frameCount) {
@@ -196,13 +199,33 @@ class XoneAudioEffectsProcessor : BaseAudioProcessor() {
                 val reflectL = readIntDelay(delayBufferR, delayWriteIdx, earlyDelaySamplesR) * 0.12f
                 val reflectR = readIntDelay(delayBufferL, delayWriteIdx, earlyDelaySamplesL) * 0.12f
 
-                val spatialL = focusedL * leftGain + reflectL
-                val spatialR = focusedR * rightGain + reflectR
+                // Binaural acoustic head-shadow 1-pole LPF on the opposite ear from the virtual source
+                val alphaL = if (pan > 0f) {
+                    1f - pan.coerceIn(0f, 1f) * (1f - headShadowMinAlpha)
+                } else {
+                    1f
+                }
+                val alphaR = if (pan < 0f) {
+                    1f - (-pan).coerceIn(0f, 1f) * (1f - headShadowMinAlpha)
+                } else {
+                    1f
+                }
+
+                val rawPannedL = focusedL * leftGain
+                val rawPannedR = focusedR * rightGain
+                lpfLeft += alphaL * (rawPannedL - lpfLeft)
+                lpfRight += alphaR * (rawPannedR - lpfRight)
+
+                val spatialL = lpfLeft + reflectL
+                val spatialR = lpfRight + reflectR
 
                 stageL = dryL * (1f - eightDMix) + spatialL * eightDMix
                 stageR = dryR * (1f - eightDMix) + spatialR * eightDMix
 
                 delayWriteIdx = (delayWriteIdx + 1) % delayCapacity
+            } else {
+                lpfLeft = 0f
+                lpfRight = 0f
             }
 
             // Stage 2: Lush Stereo Schroeder/Freeverb Reverb
@@ -305,12 +328,20 @@ class XoneAudioEffectsProcessor : BaseAudioProcessor() {
         wetLpCoeff = (dt / (rc + dt)).toFloat().coerceIn(0.05f, 0.95f)
         wetLpL = 0f
         wetLpR = 0f
+
+        // Binaural head-shadow LPF cutoff (~2.8 kHz) at extreme opposite pan
+        val shadowRc = 1.0 / (2.0 * PI * HEAD_SHADOW_CUTOFF_HZ)
+        headShadowMinAlpha = (dt / (shadowRc + dt)).toFloat().coerceIn(0.08f, 0.85f)
+        lpfLeft = 0f
+        lpfRight = 0f
     }
 
     private fun zeroDspBuffers() {
         delayBufferL.fill(0f)
         delayBufferR.fill(0f)
         delayWriteIdx = 0
+        lpfLeft = 0f
+        lpfRight = 0f
         zeroReverbBuffers()
     }
 
@@ -394,7 +425,9 @@ class XoneAudioEffectsProcessor : BaseAudioProcessor() {
     }
 
     companion object {
-        private const val EIGHT_D_LFO_HZ = 0.13
+        // Original period was 1/0.13 ~= 7.6923s; reduced by 0.85s -> ~6.8423s orbit cycle
+        private const val EIGHT_D_ORBIT_PERIOD_SEC = 6.8423077f
+        private const val HEAD_SHADOW_CUTOFF_HZ = 2800.0
         private const val PCM16_INV_SCALE = 1f / 32768f
 
         // 4 parallel Freeverb comb tunings + 2 allpass tunings (in 44.1 kHz samples)

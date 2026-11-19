@@ -10,6 +10,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { usePlayerStore } from "../store/usePlayerStore";
+import { TrackArtwork } from "./TrackArtwork";
 import { XoneLogo } from "./XoneLogo";
 
 export const Sidebar: React.FC = () => {
@@ -239,18 +240,20 @@ export const Sidebar: React.FC = () => {
                       {pl.thumbnails.length >= 4 ? (
                         <div className="grid grid-cols-2 grid-rows-2 w-full h-full">
                           {pl.thumbnails.slice(0, 4).map((thumb, idx) => (
-                            <img
+                            <TrackArtwork
                               key={idx}
                               src={thumb}
                               alt=""
+                              iconSize={11}
                               className="w-full h-full object-cover"
                             />
                           ))}
                         </div>
                       ) : pl.thumbnails.length > 0 ? (
-                        <img
+                        <TrackArtwork
                           src={pl.thumbnails[0]}
                           alt=""
+                          iconSize={18}
                           className="w-full h-full object-cover"
                         />
                       ) : (

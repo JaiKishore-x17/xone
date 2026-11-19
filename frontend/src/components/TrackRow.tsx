@@ -12,6 +12,7 @@ import {
 import { usePlayerStore } from "../store/usePlayerStore";
 import type { Track } from "../types";
 import { DownloadStatusIcon } from "./DownloadStatusIcon";
+import { TrackArtwork } from "./TrackArtwork";
 import type { ContextMenuState } from "./TrackContextMenu";
 
 interface TrackRowProps {
@@ -157,10 +158,11 @@ export const TrackRow: React.FC<TrackRowProps> = ({
         className="flex items-center gap-3 min-w-0 flex-1 cursor-pointer min-h-[44px]"
       >
         <div className="relative w-11 h-11 md:w-10 md:h-10 rounded overflow-hidden shrink-0 bg-[#141414]">
-          <img
+          <TrackArtwork
             src={track.thumbnail}
             alt={track.title}
             loading="lazy"
+            iconSize={16}
             className="w-full h-full object-cover"
           />
           {isActivelyPlaying && (

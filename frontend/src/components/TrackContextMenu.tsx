@@ -15,6 +15,7 @@ import {
 import { usePlayerStore } from "../store/usePlayerStore";
 import type { Track } from "../types";
 import { DownloadStatusIcon } from "./DownloadStatusIcon";
+import { TrackArtwork } from "./TrackArtwork";
 
 export interface ContextMenuState {
   track: Track;
@@ -405,9 +406,10 @@ export const TrackContextMenu: React.FC<TrackContextMenuProps> = ({
             data-sheet-handle="true"
             className="flex items-center gap-3 pb-3 border-b border-white/10"
           >
-            <img
+            <TrackArtwork
               src={menu.track.thumbnail}
               alt={menu.track.title}
+              iconSize={18}
               className="w-11 h-11 rounded object-cover shrink-0 bg-black"
             />
             <div className="min-w-0 flex-1">

@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { usePlayerStore } from "../store/usePlayerStore";
 import { formatTotalDuration, getTimeGreeting } from "../utils/format";
+import { TrackArtwork } from "./TrackArtwork";
 import { TrackContextMenu, type ContextMenuState } from "./TrackContextMenu";
 import { TrackRow } from "./TrackRow";
 
@@ -150,9 +151,10 @@ export const MainView: React.FC = () => {
                 }}
               >
                 {pl.thumbnails.length > 0 ? (
-                  <img
+                  <TrackArtwork
                     src={pl.thumbnails[0]}
                     alt=""
+                    iconSize={20}
                     className="w-full h-full object-cover"
                   />
                 ) : (
@@ -339,18 +341,20 @@ export const MainView: React.FC = () => {
                     {pl.thumbnails.length >= 4 ? (
                       <div className="grid grid-cols-2 grid-rows-2 w-full h-full">
                         {pl.thumbnails.slice(0, 4).map((thumb, idx) => (
-                          <img
+                          <TrackArtwork
                             key={idx}
                             src={thumb}
                             alt=""
+                            iconSize={11}
                             className="w-full h-full object-cover"
                           />
                         ))}
                       </div>
                     ) : pl.thumbnails.length > 0 ? (
-                      <img
+                      <TrackArtwork
                         src={pl.thumbnails[0]}
                         alt=""
+                        iconSize={18}
                         className="w-full h-full object-cover"
                       />
                     ) : (
@@ -437,9 +441,10 @@ export const MainView: React.FC = () => {
                         }}
                         className="group flex items-center gap-3 px-2.5 md:px-3 py-2 rounded-lg hover:bg-[#1E1E1E] active:bg-[#1E1E1E] cursor-pointer transition-colors"
                       >
-                        <img
+                        <TrackArtwork
                           src={track.thumbnail}
                           alt={track.title}
+                          iconSize={18}
                           className="w-11 h-11 rounded object-cover shrink-0 bg-[#141414]"
                         />
                         <div className="min-w-0 flex-1">
@@ -566,9 +571,10 @@ export const MainView: React.FC = () => {
                     }}
                     className="group relative p-5 rounded-lg bg-[#141414] hover:bg-[#1E1E1E] transition-colors cursor-pointer min-h-[200px] md:h-[232px] flex flex-col justify-between gap-4"
                   >
-                    <img
+                    <TrackArtwork
                       src={topResult.thumbnail}
                       alt={topResult.title}
+                      iconSize={34}
                       className="w-24 h-24 md:w-[104px] md:h-[104px] rounded-md object-cover shadow-2xl bg-black"
                     />
                     <div className="min-w-0 pr-14">
@@ -861,18 +867,20 @@ export const MainView: React.FC = () => {
             {playlist.thumbnails.length >= 4 ? (
               <div className="grid grid-cols-2 grid-rows-2 w-full h-full">
                 {playlist.thumbnails.slice(0, 4).map((thumb, idx) => (
-                  <img
+                  <TrackArtwork
                     key={idx}
                     src={thumb}
                     alt=""
+                    iconSize={26}
                     className="w-full h-full object-cover"
                   />
                 ))}
               </div>
             ) : playlist.thumbnails.length > 0 ? (
-              <img
+              <TrackArtwork
                 src={playlist.thumbnails[0]}
                 alt={playlist.name}
+                iconSize={48}
                 className="w-full h-full object-cover"
               />
             ) : (
@@ -1090,9 +1098,10 @@ export const MainView: React.FC = () => {
         </h2>
         {currentTrack ? (
           <div className="flex items-center gap-3 md:gap-4 p-3 rounded-lg bg-[#141414] border border-[#FF5E4D]/25">
-            <img
+            <TrackArtwork
               src={currentTrack.thumbnail}
               alt={currentTrack.title}
+              iconSize={18}
               className="w-12 h-12 rounded object-cover shrink-0"
             />
             <div className="min-w-0 flex-1">
@@ -1149,12 +1158,17 @@ export const MainView: React.FC = () => {
                   <span className="hidden md:inline-block w-6 text-center text-xs tabular-nums text-[#B3B3B3]">
                     {offset + 1}
                   </span>
-                  <img
-                    src={track.thumbnail}
-                    alt={track.title}
-                    className="w-11 h-11 md:w-10 md:h-10 rounded object-cover cursor-pointer shrink-0"
+                  <div
                     onClick={() => playTrack(track, queue)}
-                  />
+                    className="cursor-pointer shrink-0"
+                  >
+                    <TrackArtwork
+                      src={track.thumbnail}
+                      alt={track.title}
+                      iconSize={16}
+                      className="w-11 h-11 md:w-10 md:h-10 rounded object-cover shrink-0"
+                    />
+                  </div>
                   <div
                     className="min-w-0 flex-1 cursor-pointer"
                     onClick={() => playTrack(track, queue)}

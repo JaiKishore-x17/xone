@@ -69,7 +69,7 @@ export const TopBar: React.FC = () => {
 
   return (
     <>
-      <header className="sticky top-0 z-30 h-[calc(4rem+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)] px-3 md:px-6 flex items-center justify-between gap-2 md:gap-4 bg-[#000000]/90 backdrop-blur-md border-b border-white/[0.04]">
+      <header className="sticky top-0 z-30 h-[calc(4rem+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)] px-3 md:px-6 flex items-center justify-between gap-2 md:gap-4 bg-[#000000]/90 backdrop-blur-md shadow-[0_6px_20px_rgba(0,0,0,0.85)] border-b border-white/[0.06]">
         {/* Left: Mobile Logo + History Navigation + Instant Debounced Search */}
         <div className="flex items-center gap-2 md:gap-3 flex-1 min-w-0 max-w-2xl">
           <button
