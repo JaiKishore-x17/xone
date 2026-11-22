@@ -42,7 +42,6 @@ export const JamModal: React.FC = () => {
   const setJamSpeakerDevices = usePlayerStore((s) => s.setJamSpeakerDevices);
   const setJamMultiSpeakerMode = usePlayerStore((s) => s.setJamMultiSpeakerMode);
   const playTrack = usePlayerStore((s) => s.playTrack);
-  const navigate = usePlayerStore((s) => s.navigate);
   const showToast = usePlayerStore((s) => s.showToast);
 
   const jamTouchRef = useRef<{
@@ -456,18 +455,7 @@ export const JamModal: React.FC = () => {
     jamTouchRef.current = null;
     if (!drag || e.changedTouches.length === 0) return;
 
-    const deltaX = e.changedTouches[0].clientX - drag.startX;
     const deltaY = e.changedTouches[0].clientY - drag.startY;
-
-    if (
-      drag.lockedAxis !== "y" &&
-      deltaX > 65 &&
-      Math.abs(deltaX) > Math.abs(deltaY) * 1.5
-    ) {
-      setJamModalOpen(false);
-      navigate({ type: "library" });
-      return;
-    }
 
     if (drag.lockedAxis === "y" && drag.canDragDown) {
       const elapsed = Math.max(1, Date.now() - drag.startTime);

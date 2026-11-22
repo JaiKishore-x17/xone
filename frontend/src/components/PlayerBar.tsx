@@ -74,6 +74,9 @@ export const PlayerBar: React.FC = () => {
   const [npEntered, setNpEntered] = useState(false);
   const [npDragY, setNpDragY] = useState(0);
   const [npTransition, setNpTransition] = useState("none");
+  const [npTrackDragX, setNpTrackDragX] = useState(0);
+  const [npTrackOpacity, setNpTrackOpacity] = useState(1);
+  const [npTrackTransition, setNpTrackTransition] = useState("none");
 
   const seekBarRef = useRef<HTMLDivElement | null>(null);
   const mobileSeekBarRef = useRef<HTMLDivElement | null>(null);
@@ -90,11 +93,15 @@ export const PlayerBar: React.FC = () => {
     startY: number;
     startTime: number;
     canDragDown: boolean;
+    allowTrackSwipe: boolean;
+    lockedAxis: "x" | "y" | null;
     dragging: boolean;
   } | null>(null);
   const miniAnimTimerRef = useRef<number | null>(null);
   const miniRafRef = useRef<number | null>(null);
   const npDismissTimerRef = useRef<number | null>(null);
+  const npTrackAnimTimerRef = useRef<number | null>(null);
+  const npTrackRafRef = useRef<number | null>(null);
   const suppressExpandClickRef = useRef(false);
 
   useEffect(() => {
@@ -105,6 +112,18 @@ export const PlayerBar: React.FC = () => {
   }, [currentTrack, setIsMobileExpanded]);
 
   useLayoutEffect(() => {
+    if (npTrackAnimTimerRef.current !== null) {
+      window.clearTimeout(npTrackAnimTimerRef.current);
+      npTrackAnimTimerRef.current = null;
+    }
+    if (npTrackRafRef.current !== null) {
+      window.cancelAnimationFrame(npTrackRafRef.current);
+      npTrackRafRef.current = null;
+    }
+    setNpTrackDragX(0);
+    setNpTrackOpacity(1);
+    setNpTrackTransition("none");
+
     if (!isMobileExpanded) {
       setNpEntered(false);
       setNpDragY(0);
@@ -141,6 +160,12 @@ export const PlayerBar: React.FC = () => {
       }
       if (npDismissTimerRef.current !== null) {
         window.clearTimeout(npDismissTimerRef.current);
+      }
+      if (npTrackAnimTimerRef.current !== null) {
+        window.clearTimeout(npTrackAnimTimerRef.current);
+      }
+      if (npTrackRafRef.current !== null) {
+        window.cancelAnimationFrame(npTrackRafRef.current);
       }
     };
   }, []);
@@ -367,6 +392,58 @@ export const PlayerBar: React.FC = () => {
     resetMiniDragPosition();
   };
 
+  const clearNpTrackAnimTimers = () => {
+    if (npTrackAnimTimerRef.current !== null) {
+      window.clearTimeout(npTrackAnimTimerRef.current);
+      npTrackAnimTimerRef.current = null;
+    }
+    if (npTrackRafRef.current !== null) {
+      window.cancelAnimationFrame(npTrackRafRef.current);
+      npTrackRafRef.current = null;
+    }
+  };
+
+  const resetNpTrackPosition = () => {
+    setNpTrackTransition(
+      "transform 200ms cubic-bezier(0.22, 1, 0.36, 1), opacity 200ms ease-out"
+    );
+    setNpTrackDragX(0);
+    setNpTrackOpacity(1);
+  };
+
+  const triggerNpSwipeSkip = (direction: "next" | "prev") => {
+    clearNpTrackAnimTimers();
+    const exitX = direction === "next" ? -160 : 160;
+    const enterX = direction === "next" ? 110 : -110;
+
+    setNpTrackTransition("transform 140ms ease-in, opacity 140ms ease-in");
+    setNpTrackDragX(exitX);
+    setNpTrackOpacity(0);
+
+    npTrackAnimTimerRef.current = window.setTimeout(() => {
+      npTrackAnimTimerRef.current = null;
+      if (direction === "next") {
+        playNextTrack(false);
+      } else {
+        playPreviousTrack();
+      }
+      setNpTrackTransition("none");
+      setNpTrackDragX(enterX);
+      setNpTrackOpacity(0);
+
+      npTrackRafRef.current = window.requestAnimationFrame(() => {
+        npTrackRafRef.current = window.requestAnimationFrame(() => {
+          npTrackRafRef.current = null;
+          setNpTrackTransition(
+            "transform 220ms cubic-bezier(0.22, 1, 0.36, 1), opacity 220ms ease-out"
+          );
+          setNpTrackDragX(0);
+          setNpTrackOpacity(1);
+        });
+      });
+    }, 140);
+  };
+
   const closeNowPlayingSmooth = () => {
     if (npDismissTimerRef.current !== null) {
       window.clearTimeout(npDismissTimerRef.current);
@@ -385,7 +462,9 @@ export const PlayerBar: React.FC = () => {
     if (e.touches.length !== 1 || nowPlayingMenu) return;
     const target = e.target as HTMLElement | null;
     if (
-      target?.closest('[role="slider"], [data-no-sheet-drag], input, textarea')
+      target?.closest(
+        '[role="slider"], [data-no-sheet-drag], button, input, textarea'
+      )
     ) {
       npTouchRef.current = null;
       return;
@@ -397,26 +476,56 @@ export const PlayerBar: React.FC = () => {
     const sheet = npSheetRef.current;
     const onHeaderOrHandle = Boolean(target?.closest("[data-np-handle]"));
     const canDragDown = onHeaderOrHandle || !sheet || sheet.scrollTop <= 4;
+    const allowTrackSwipe = Boolean(target?.closest("[data-np-track-swipe]"));
     npTouchRef.current = {
       startX: e.touches[0].clientX,
       startY: e.touches[0].clientY,
       startTime: Date.now(),
       canDragDown,
+      allowTrackSwipe,
+      lockedAxis: null,
       dragging: false,
     };
   };
 
   const handleNpTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
     const drag = npTouchRef.current;
-    if (!drag || !drag.canDragDown || e.touches.length !== 1) return;
+    if (!drag || e.touches.length !== 1) return;
     const dx = e.touches[0].clientX - drag.startX;
     const dy = e.touches[0].clientY - drag.startY;
-    if (dy > 6 && Math.abs(dy) > Math.abs(dx) * 1.2) {
+    const dist = Math.hypot(dx, dy);
+
+    if (drag.lockedAxis === null && dist >= 8) {
+      if (
+        drag.allowTrackSwipe &&
+        Math.abs(dx) > 10 &&
+        Math.abs(dx) > Math.abs(dy) * 1.4
+      ) {
+        drag.lockedAxis = "x";
+        clearNpTrackAnimTimers();
+      } else if (
+        drag.canDragDown &&
+        dy > 8 &&
+        Math.abs(dy) > Math.abs(dx) * 1.2
+      ) {
+        drag.lockedAxis = "y";
+      }
+    }
+
+    if (drag.lockedAxis === "x") {
       drag.dragging = true;
-      setNpTransition("none");
-      setNpDragY(dy);
-    } else if (drag.dragging && dy <= 0) {
-      setNpDragY(0);
+      const clampedX = Math.max(-140, Math.min(140, dx));
+      setNpTrackTransition("none");
+      setNpTrackDragX(clampedX);
+      setNpTrackOpacity(Math.max(0.45, 1 - Math.abs(clampedX) / 220));
+    } else if (drag.lockedAxis === "y" && drag.canDragDown) {
+      if (dy > 6) {
+        drag.dragging = true;
+        setNpTransition("none");
+        setNpDragY(dy);
+      } else if (drag.dragging && dy <= 0) {
+        setNpDragY(0);
+      }
     }
   };
 
@@ -425,10 +534,26 @@ export const PlayerBar: React.FC = () => {
     npTouchRef.current = null;
     if (!drag || !drag.dragging) return;
 
+    const dx =
+      e.changedTouches.length > 0
+        ? e.changedTouches[0].clientX - drag.startX
+        : npTrackDragX;
     const dy =
       e.changedTouches.length > 0
         ? e.changedTouches[0].clientY - drag.startY
         : npDragY;
+
+    if (drag.lockedAxis === "x") {
+      if (dx <= -65) {
+        triggerNpSwipeSkip("next");
+      } else if (dx >= 65) {
+        triggerNpSwipeSkip("prev");
+      } else {
+        resetNpTrackPosition();
+      }
+      return;
+    }
+
     const elapsed = Math.max(1, Date.now() - drag.startTime);
     const velocity = dy / elapsed;
 
@@ -444,6 +569,7 @@ export const PlayerBar: React.FC = () => {
     npTouchRef.current = null;
     setNpTransition("transform 220ms cubic-bezier(0.22, 1, 0.36, 1)");
     setNpDragY(0);
+    resetNpTrackPosition();
   };
 
   return (
@@ -594,7 +720,7 @@ export const PlayerBar: React.FC = () => {
                 ? npTransition
                 : "transform 260ms cubic-bezier(0.22, 1, 0.36, 1)",
           }}
-          className="fixed inset-0 z-50 md:hidden bg-gradient-to-b from-[#1E1E1E] via-[#000000] to-[#000000] flex flex-col justify-between px-6 pt-[calc(0.75rem+env(safe-area-inset-top))] pb-[calc(2rem+env(safe-area-inset-bottom))] overflow-y-auto select-none"
+          className="fixed inset-0 z-50 md:hidden bg-gradient-to-b from-[#1E1E1E] via-[#000000] to-[#000000] flex flex-col justify-between px-6 pt-[calc(0.75rem+env(safe-area-inset-top))] pb-[calc(2rem+env(safe-area-inset-bottom))] overflow-y-auto overflow-x-hidden select-none"
         >
           {/* Top Drag Handle Pill + Header */}
           <div data-np-handle="true">
@@ -653,8 +779,19 @@ export const PlayerBar: React.FC = () => {
           </div>
 
           {/* Large Centered Artwork */}
-          <div className="my-4 flex-1 flex items-center justify-center">
-            <div className="relative w-full max-w-[320px] aspect-square rounded-xl overflow-hidden shadow-2xl bg-[#141414]">
+          <div
+            data-np-track-swipe="true"
+            data-no-tab-swipe="true"
+            className="my-4 flex-1 flex items-center justify-center overflow-hidden"
+          >
+            <div
+              style={{
+                transform: `translate3d(${npTrackDragX}px, 0, 0) scale(${1 - Math.min(0.04, Math.abs(npTrackDragX) / 2800)})`,
+                opacity: npTrackOpacity,
+                transition: npTrackTransition,
+              }}
+              className="relative w-full max-w-[320px] aspect-square rounded-xl overflow-hidden shadow-2xl bg-[#141414]"
+            >
               <TrackArtwork
                 src={currentTrack.thumbnail}
                 alt={currentTrack.title}
@@ -672,18 +809,30 @@ export const PlayerBar: React.FC = () => {
           {/* Track Meta, Seek Bar & Controls */}
           <div className="space-y-5">
             <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0 flex-1">
-                <h2 className="text-xl font-extrabold text-white truncate">
-                  {currentTrack.title}
-                </h2>
-                <p className="text-sm text-[#B3B3B3] truncate mt-0.5">
-                  {currentTrack.artist}
-                </p>
-                {playbackError && (
-                  <p className="text-xs text-[#FF5E4D] truncate mt-1">
-                    {playbackError}
+              <div
+                data-np-track-swipe="true"
+                data-no-tab-swipe="true"
+                className="min-w-0 flex-1 overflow-hidden"
+              >
+                <div
+                  style={{
+                    transform: `translate3d(${npTrackDragX}px, 0, 0) scale(${1 - Math.min(0.04, Math.abs(npTrackDragX) / 2800)})`,
+                    opacity: npTrackOpacity,
+                    transition: npTrackTransition,
+                  }}
+                >
+                  <h2 className="text-xl font-extrabold text-white truncate">
+                    {currentTrack.title}
+                  </h2>
+                  <p className="text-sm text-[#B3B3B3] truncate mt-0.5">
+                    {currentTrack.artist}
                   </p>
-                )}
+                  {playbackError && (
+                    <p className="text-xs text-[#FF5E4D] truncate mt-1">
+                      {playbackError}
+                    </p>
+                  )}
+                </div>
               </div>
               <div className="flex items-center shrink-0 -mr-2">
                 <button

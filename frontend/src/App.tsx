@@ -11,8 +11,9 @@ import { TopBar } from "./components/TopBar";
 import { usePlayerStore } from "./store/usePlayerStore";
 import type { ActiveView } from "./types";
 
-function getTabIndex(view: ActiveView, isJamModalOpen: boolean): number {
-  if (isJamModalOpen) return 3;
+const TAB_ORDER = ["home", "search", "library"] as const;
+
+function getTabIndex(view: ActiveView): number {
   if (view.type === "home") return 0;
   if (view.type === "search") return 1;
   return 2;
@@ -39,10 +40,9 @@ export const App: React.FC = () => {
   const isMobilePlayerExpanded = usePlayerStore((s) => s.isMobilePlayerExpanded);
   const isNewPlaylistModalOpen = usePlayerStore((s) => s.isNewPlaylistModalOpen);
   const navigate = usePlayerStore((s) => s.navigate);
-  const setJamModalOpen = usePlayerStore((s) => s.setJamModalOpen);
   const setKeyboardOpen = usePlayerStore((s) => s.setKeyboardOpen);
 
-  const currentTabIndex = getTabIndex(activeView, isJamModalOpen);
+  const currentTabIndex = getTabIndex(activeView);
   const prevTabIndexRef = useRef<number>(currentTabIndex);
   const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
   const [tabTransition, setTabTransition] = useState<
@@ -173,9 +173,7 @@ export const App: React.FC = () => {
     const prev = prevTabIndexRef.current;
     if (prev !== currentTabIndex) {
       prevTabIndexRef.current = currentTabIndex;
-      if (currentTabIndex !== 3) {
-        setTabTransition(currentTabIndex > prev ? "from-right" : "from-left");
-      }
+      setTabTransition(currentTabIndex > prev ? "from-right" : "from-left");
     }
   }, [currentTabIndex]);
 
@@ -199,17 +197,14 @@ export const App: React.FC = () => {
 
   const switchToTab = (targetIndex: number) => {
     if (targetIndex === currentTabIndex) return;
-    if (targetIndex === 0) {
-      setJamModalOpen(false);
+    const clampedIndex = Math.max(0, Math.min(TAB_ORDER.length - 1, targetIndex));
+    const nextTab = TAB_ORDER[clampedIndex];
+    if (nextTab === "home") {
       navigate({ type: "home" });
-    } else if (targetIndex === 1) {
-      setJamModalOpen(false);
+    } else if (nextTab === "search") {
       navigate({ type: "search" });
-    } else if (targetIndex === 2) {
-      setJamModalOpen(false);
+    } else {
       navigate({ type: "library" });
-    } else if (targetIndex === 3) {
-      setJamModalOpen(true);
     }
   };
 
@@ -249,7 +244,7 @@ export const App: React.FC = () => {
     const deltaY = e.changedTouches[0].clientY - start.y;
     if (Math.abs(deltaX) > 65 && Math.abs(deltaX) > Math.abs(deltaY) * 1.5) {
       if (deltaX < 0) {
-        switchToTab(Math.min(3, currentTabIndex + 1));
+        switchToTab(Math.min(TAB_ORDER.length - 1, currentTabIndex + 1));
       } else {
         switchToTab(Math.max(0, currentTabIndex - 1));
       }

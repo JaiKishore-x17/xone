@@ -1,12 +1,11 @@
 import React from "react";
-import { Home, Library, Search, Speaker } from "lucide-react";
+import { Home, Library, Search } from "lucide-react";
 import { usePlayerStore } from "../store/usePlayerStore";
 
 export const MobileBottomNav: React.FC = () => {
   const activeView = usePlayerStore((s) => s.activeView);
   const isJamModalOpen = usePlayerStore((s) => s.isJamModalOpen);
   const isKeyboardOpen = usePlayerStore((s) => s.isKeyboardOpen);
-  const jamActive = usePlayerStore((s) => s.jamState.active);
   const navigate = usePlayerStore((s) => s.navigate);
   const setJamModalOpen = usePlayerStore((s) => s.setJamModalOpen);
 
@@ -73,22 +72,6 @@ export const MobileBottomNav: React.FC = () => {
       >
         <Library size={20} />
         <span>Library</span>
-      </button>
-
-      <button
-        type="button"
-        onClick={() => setJamModalOpen(true)}
-        className={`relative min-h-[44px] min-w-[56px] flex flex-col items-center justify-center gap-0.5 text-[11px] font-semibold transition-colors ${
-          isJamModalOpen || jamActive
-            ? "text-[#FF5E4D]"
-            : "text-[#B3B3B3] hover:text-white"
-        }`}
-      >
-        <Speaker size={20} />
-        <span>Jam</span>
-        {jamActive && (
-          <span className="absolute top-1.5 right-2.5 w-1.5 h-1.5 rounded-full bg-[#FF5E4D] animate-pulse" />
-        )}
       </button>
     </nav>
   );
