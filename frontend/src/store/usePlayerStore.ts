@@ -153,6 +153,7 @@ interface PlayerState {
   playPreviousTrack: () => void;
   playNextInQueue: (track: Track) => void;
   addToQueue: (track: Track) => void;
+  addTracksToQueue: (tracks: Track[]) => Promise<void>;
   removeFromQueue: (index: number) => void;
   clearUpcomingQueue: () => void;
   toggleShuffle: () => void;
@@ -916,6 +917,41 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
   addToQueue: (track) => {
     get().playNextInQueue(track);
+  },
+
+  addTracksToQueue: async (tracks) => {
+    if (!tracks || tracks.length === 0) {
+      get().showToast("No songs to add");
+      return;
+    }
+    const state = get();
+    const count = tracks.length;
+    const noun = count === 1 ? "song" : "songs";
+
+    if (state.jamState.active) {
+      const localName = state.jamState.localDeviceName || undefined;
+      for (const track of tracks) {
+        try {
+          await jamAddTrackApi(track, localName);
+        } catch {
+          // ignore individual track errors in bulk add
+        }
+      }
+      state.showToast(`Added ${count} ${noun} to Jam`);
+      return;
+    }
+
+    if (!state.currentTrack || state.queue.length === 0) {
+      state.playTrack(tracks[0], tracks);
+      state.showToast(`Added ${count} ${noun} to queue`);
+      return;
+    }
+
+    set({
+      queue: [...state.queue, ...tracks],
+      originalQueue: [...state.originalQueue, ...tracks],
+    });
+    state.showToast(`Added ${count} ${noun} to queue`);
   },
 
   removeFromQueue: (index) => {

@@ -1,11 +1,13 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   Clock3,
   Download,
   FolderOpen,
   Heart,
   ListMusic,
+  ListPlus,
   Loader2,
+  MoreVertical,
   Pause,
   Play,
   Plus,
@@ -54,6 +56,7 @@ export const MainView: React.FC = () => {
   const reorderPlaylistTracks = usePlayerStore((s) => s.reorderPlaylistTracks);
   const removeFromQueue = usePlayerStore((s) => s.removeFromQueue);
   const clearUpcomingQueue = usePlayerStore((s) => s.clearUpcomingQueue);
+  const addTracksToQueue = usePlayerStore((s) => s.addTracksToQueue);
   const openDownloadsFolder = usePlayerStore((s) => s.openDownloadsFolder);
   const setNewPlaylistModalOpen = usePlayerStore(
     (s) => s.setNewPlaylistModalOpen
@@ -66,6 +69,26 @@ export const MainView: React.FC = () => {
   const clearRecentSearches = usePlayerStore((s) => s.clearRecentSearches);
 
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const [collectionMenuOpen, setCollectionMenuOpen] = useState(false);
+  const collectionMenuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    setCollectionMenuOpen(false);
+  }, [activeView]);
+
+  useEffect(() => {
+    if (!collectionMenuOpen) return;
+    const handleOutside = (e: MouseEvent) => {
+      if (
+        collectionMenuRef.current &&
+        !collectionMenuRef.current.contains(e.target as Node)
+      ) {
+        setCollectionMenuOpen(false);
+      }
+    };
+    window.addEventListener("mousedown", handleOutside);
+    return () => window.removeEventListener("mousedown", handleOutside);
+  }, [collectionMenuOpen]);
 
   // Drag & drop state for playlist reordering
   const [dragIndex, setDragIndex] = useState<number | null>(null);
@@ -184,6 +207,50 @@ export const MainView: React.FC = () => {
             </button>
           )}
         </div>
+
+        {/* Home Vertical Track List (Recent / Liked / Downloaded) */}
+        {(recentSearches.length > 0 ||
+          likedSongs.length > 0 ||
+          downloadedTracks.length > 0) &&
+          (() => {
+            const homeTracks =
+              recentSearches.length > 0
+                ? recentSearches.slice(0, 8)
+                : likedSongs.length > 0
+                  ? likedSongs.slice(0, 8)
+                  : downloadedTracks.slice(0, 8);
+            const homeSectionTitle =
+              recentSearches.length > 0
+                ? "Jump Back In"
+                : likedSongs.length > 0
+                  ? "Your Favorites"
+                  : "Offline Tracks";
+            return (
+              <div>
+                <h2 className="text-lg md:text-xl font-bold text-white mb-3">
+                  {homeSectionTitle}
+                </h2>
+                {renderPlayableListHeader()}
+                <div className="space-y-0.5">
+                  {homeTracks.map((track, idx) => (
+                    <SwipeableTrackRow key={track.video_id} track={track}>
+                      <TrackRow
+                        track={track}
+                        index={idx}
+                        contextQueue={homeTracks}
+                        onOpenContextMenu={setContextMenu}
+                      />
+                    </SwipeableTrackRow>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+
+        <TrackContextMenu
+          menu={contextMenu}
+          onClose={() => setContextMenu(null)}
+        />
       </div>
     );
   }
@@ -276,13 +343,14 @@ export const MainView: React.FC = () => {
             {downloadedTracks.length > 0 && (
               <div className="border-t border-white/10 px-1 md:px-3 py-2 space-y-0.5">
                 {downloadedTracks.map((track, idx) => (
-                  <TrackRow
-                    key={track.video_id}
-                    track={track}
-                    index={idx}
-                    contextQueue={downloadedTracks}
-                    onOpenContextMenu={setContextMenu}
-                  />
+                  <SwipeableTrackRow key={track.video_id} track={track}>
+                    <TrackRow
+                      track={track}
+                      index={idx}
+                      contextQueue={downloadedTracks}
+                      onOpenContextMenu={setContextMenu}
+                    />
+                  </SwipeableTrackRow>
                 ))}
               </div>
             )}
@@ -778,6 +846,48 @@ export const MainView: React.FC = () => {
           >
             <Shuffle size={24} />
           </button>
+
+          {/* Header Triple-Dot (⋮) Collection Menu */}
+          <div className="relative" ref={collectionMenuRef}>
+            <button
+              type="button"
+              disabled={tracks.length === 0}
+              onClick={() => setCollectionMenuOpen((v) => !v)}
+              aria-label={`More options for ${viewTitle}`}
+              title={`More options for ${viewTitle}`}
+              className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-full text-[#B3B3B3] hover:text-white hover:bg-white/10 disabled:opacity-40 transition-colors"
+            >
+              <MoreVertical size={22} />
+            </button>
+
+            {collectionMenuOpen && (
+              <div className="absolute right-0 md:left-0 md:right-auto top-full mt-1.5 z-40 w-60 rounded-xl bg-[#1E1E1E] border border-white/10 shadow-2xl py-1.5 text-sm text-white select-none">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCollectionMenuOpen(false);
+                    void addTracksToQueue(tracks);
+                  }}
+                  className="w-full min-h-[44px] px-3.5 py-2 flex items-center gap-3 hover:bg-white/10 active:bg-white/10 text-left transition-colors"
+                >
+                  {jamState.active ? (
+                    <Radio size={17} className="text-[#FF5E4D] shrink-0" />
+                  ) : (
+                    <ListPlus size={17} className="text-[#FF5E4D] shrink-0" />
+                  )}
+                  <span className="font-semibold">
+                    {isDownloadsView
+                      ? jamState.active
+                        ? "Add Downloaded to Jam"
+                        : "Add Downloaded to queue"
+                      : jamState.active
+                        ? "Add Liked Songs to Jam"
+                        : "Add Liked Songs to queue"}
+                  </span>
+                </button>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Tracks Table */}
@@ -805,13 +915,14 @@ export const MainView: React.FC = () => {
               {renderPlayableListHeader()}
               <div className="space-y-0.5">
                 {tracks.map((track, idx) => (
-                  <TrackRow
-                    key={track.video_id}
-                    track={track}
-                    index={idx}
-                    contextQueue={tracks}
-                    onOpenContextMenu={setContextMenu}
-                  />
+                  <SwipeableTrackRow key={track.video_id} track={track}>
+                    <TrackRow
+                      track={track}
+                      index={idx}
+                      contextQueue={tracks}
+                      onOpenContextMenu={setContextMenu}
+                    />
+                  </SwipeableTrackRow>
                 ))}
               </div>
             </>
@@ -949,15 +1060,67 @@ export const MainView: React.FC = () => {
             </span>
           </div>
 
-          <button
-            type="button"
-            onClick={() => void deletePlaylist(playlist.id)}
-            className="min-h-[44px] md:min-h-0 flex items-center gap-1.5 px-4 md:px-3.5 py-2 md:py-1.5 rounded-full bg-black/40 hover:bg-[#1E1E1E] text-xs font-semibold text-[#B3B3B3] hover:text-[#FF5E4D] transition-colors shrink-0"
-          >
-            <Trash2 size={15} />
-            <span>Delete</span>
-            <span className="hidden sm:inline">Playlist</span>
-          </button>
+          <div className="flex items-center gap-2">
+            {/* Header Triple-Dot (⋮) Playlist Menu */}
+            <div className="relative" ref={collectionMenuRef}>
+              <button
+                type="button"
+                onClick={() => setCollectionMenuOpen((v) => !v)}
+                aria-label={`More options for ${playlist.name}`}
+                title={`More options for ${playlist.name}`}
+                className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-full text-[#B3B3B3] hover:text-white hover:bg-white/10 transition-colors"
+              >
+                <MoreVertical size={22} />
+              </button>
+
+              {collectionMenuOpen && (
+                <div className="absolute right-0 top-full mt-1.5 z-40 w-60 rounded-xl bg-[#1E1E1E] border border-white/10 shadow-2xl py-1.5 text-sm text-white select-none">
+                  <button
+                    type="button"
+                    disabled={tracks.length === 0}
+                    onClick={() => {
+                      setCollectionMenuOpen(false);
+                      void addTracksToQueue(tracks);
+                    }}
+                    className="w-full min-h-[44px] px-3.5 py-2 flex items-center gap-3 hover:bg-white/10 active:bg-white/10 disabled:opacity-40 text-left transition-colors"
+                  >
+                    {jamState.active ? (
+                      <Radio size={17} className="text-[#FF5E4D] shrink-0" />
+                    ) : (
+                      <ListPlus size={17} className="text-[#FF5E4D] shrink-0" />
+                    )}
+                    <span className="font-semibold">
+                      {jamState.active
+                        ? "Add playlist to Jam"
+                        : "Add playlist to queue"}
+                    </span>
+                  </button>
+                  <div className="my-1 border-t border-white/10" />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCollectionMenuOpen(false);
+                      void deletePlaylist(playlist.id);
+                    }}
+                    className="w-full min-h-[44px] px-3.5 py-2 flex items-center gap-3 hover:bg-white/10 active:bg-white/10 text-left text-[#FF5E4D] transition-colors"
+                  >
+                    <Trash2 size={16} className="shrink-0" />
+                    <span className="font-semibold">Delete playlist</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => void deletePlaylist(playlist.id)}
+              className="min-h-[44px] md:min-h-0 flex items-center gap-1.5 px-4 md:px-3.5 py-2 md:py-1.5 rounded-full bg-black/40 hover:bg-[#1E1E1E] text-xs font-semibold text-[#B3B3B3] hover:text-[#FF5E4D] transition-colors shrink-0"
+            >
+              <Trash2 size={15} />
+              <span>Delete</span>
+              <span className="hidden sm:inline">Playlist</span>
+            </button>
+          </div>
         </div>
 
         {/* Reorderable Track List */}
@@ -984,39 +1147,40 @@ export const MainView: React.FC = () => {
               {renderPlayableListHeader()}
               <div className="space-y-0.5">
                 {tracks.map((track, idx) => (
-                  <TrackRow
-                    key={track.video_id}
-                    track={track}
-                    index={idx}
-                    contextQueue={tracks}
-                    playlistId={playlist.id}
-                    reorderable
-                    totalCount={tracks.length}
-                    isDragOver={dragOverIndex === idx && dragIndex !== idx}
-                    onMoveUp={() =>
-                      void reorderPlaylistTracks(playlist.id, idx, idx - 1)
-                    }
-                    onMoveDown={() =>
-                      void reorderPlaylistTracks(playlist.id, idx, idx + 1)
-                    }
-                    onDragStart={(fromIdx) => setDragIndex(fromIdx)}
-                    onDragOverRow={(e, overIdx) => {
-                      e.preventDefault();
-                      setDragOverIndex(overIdx);
-                    }}
-                    onDropRow={(toIdx) => {
-                      if (dragIndex !== null && dragIndex !== toIdx) {
-                        void reorderPlaylistTracks(
-                          playlist.id,
-                          dragIndex,
-                          toIdx
-                        );
+                  <SwipeableTrackRow key={track.video_id} track={track}>
+                    <TrackRow
+                      track={track}
+                      index={idx}
+                      contextQueue={tracks}
+                      playlistId={playlist.id}
+                      reorderable
+                      totalCount={tracks.length}
+                      isDragOver={dragOverIndex === idx && dragIndex !== idx}
+                      onMoveUp={() =>
+                        void reorderPlaylistTracks(playlist.id, idx, idx - 1)
                       }
-                      setDragIndex(null);
-                      setDragOverIndex(null);
-                    }}
-                    onOpenContextMenu={setContextMenu}
-                  />
+                      onMoveDown={() =>
+                        void reorderPlaylistTracks(playlist.id, idx, idx + 1)
+                      }
+                      onDragStart={(fromIdx) => setDragIndex(fromIdx)}
+                      onDragOverRow={(e, overIdx) => {
+                        e.preventDefault();
+                        setDragOverIndex(overIdx);
+                      }}
+                      onDropRow={(toIdx) => {
+                        if (dragIndex !== null && dragIndex !== toIdx) {
+                          void reorderPlaylistTracks(
+                            playlist.id,
+                            dragIndex,
+                            toIdx
+                          );
+                        }
+                        setDragIndex(null);
+                        setDragOverIndex(null);
+                      }}
+                      onOpenContextMenu={setContextMenu}
+                    />
+                  </SwipeableTrackRow>
                 ))}
               </div>
             </>
@@ -1155,58 +1319,63 @@ export const MainView: React.FC = () => {
                 offset === 0 && prefetchedVideoId === track.video_id;
 
               return (
-                <div
+                <SwipeableTrackRow
                   key={`${track.video_id}-${absoluteIdx}`}
-                  className="group flex items-center gap-3 px-2 md:px-3 py-2 rounded-md hover:bg-[#1E1E1E] transition-colors"
+                  track={track}
+                  mode="queue"
+                  canRemove={!jamState.active}
+                  onRemoveFromQueue={() => removeFromQueue(absoluteIdx)}
                 >
-                  <span className="hidden md:inline-block w-6 text-center text-xs tabular-nums text-[#B3B3B3]">
-                    {offset + 1}
-                  </span>
-                  <div
-                    onClick={() => playTrack(track, queue)}
-                    className="cursor-pointer shrink-0"
-                  >
-                    <TrackArtwork
-                      src={track.thumbnail}
-                      alt={track.title}
-                      iconSize={16}
-                      className="w-11 h-11 md:w-10 md:h-10 rounded object-cover shrink-0"
-                    />
-                  </div>
-                  <div
-                    className="min-w-0 flex-1 cursor-pointer"
-                    onClick={() => playTrack(track, queue)}
-                  >
-                    <p className="text-sm font-medium text-white truncate">
-                      {track.title}
-                    </p>
-                    <p className="text-xs text-[#B3B3B3] truncate">
-                      {track.artist}
-                      {(track as { addedBy?: string }).addedBy
-                        ? ` • Added by ${(track as { addedBy?: string }).addedBy}`
-                        : ""}
-                    </p>
-                  </div>
-                  {isPrefetched && (
-                    <span className="hidden sm:inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#FF5E4D]/15 border border-[#FF5E4D]/40 text-[10px] font-bold text-[#FF5E4D] shrink-0">
-                      <Sparkles size={10} />
-                      PREFETCHED • READY
+                  <div className="group flex items-center gap-3 px-2 md:px-3 py-2 rounded-md hover:bg-[#1E1E1E] transition-colors">
+                    <span className="hidden md:inline-block w-6 text-center text-xs tabular-nums text-[#B3B3B3]">
+                      {offset + 1}
                     </span>
-                  )}
-                  <span className="hidden md:inline text-xs text-[#B3B3B3] tabular-nums">
-                    {track.duration}
-                  </span>
-                  {!jamState.active && (
-                    <button
-                      type="button"
-                      onClick={() => removeFromQueue(absoluteIdx)}
-                      aria-label="Remove from queue"
-                      className="min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0 flex items-center justify-center p-2 md:p-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 rounded-full text-[#B3B3B3] hover:text-[#FF5E4D] transition-all shrink-0"
+                    <div
+                      onClick={() => playTrack(track, queue)}
+                      className="cursor-pointer shrink-0"
                     >
-                      <X size={16} />
-                    </button>
-                  )}
-                </div>
+                      <TrackArtwork
+                        src={track.thumbnail}
+                        alt={track.title}
+                        iconSize={16}
+                        className="w-11 h-11 md:w-10 md:h-10 rounded object-cover shrink-0"
+                      />
+                    </div>
+                    <div
+                      className="min-w-0 flex-1 cursor-pointer"
+                      onClick={() => playTrack(track, queue)}
+                    >
+                      <p className="text-sm font-medium text-white truncate">
+                        {track.title}
+                      </p>
+                      <p className="text-xs text-[#B3B3B3] truncate">
+                        {track.artist}
+                        {(track as { addedBy?: string }).addedBy
+                          ? ` • Added by ${(track as { addedBy?: string }).addedBy}`
+                          : ""}
+                      </p>
+                    </div>
+                    {isPrefetched && (
+                      <span className="hidden sm:inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#FF5E4D]/15 border border-[#FF5E4D]/40 text-[10px] font-bold text-[#FF5E4D] shrink-0">
+                        <Sparkles size={10} />
+                        PREFETCHED • READY
+                      </span>
+                    )}
+                    <span className="hidden md:inline text-xs text-[#B3B3B3] tabular-nums">
+                      {track.duration}
+                    </span>
+                    {!jamState.active && (
+                      <button
+                        type="button"
+                        onClick={() => removeFromQueue(absoluteIdx)}
+                        aria-label="Remove from queue"
+                        className="min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0 flex items-center justify-center p-2 md:p-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 rounded-full text-[#B3B3B3] hover:text-[#FF5E4D] transition-all shrink-0"
+                      >
+                        <X size={16} />
+                      </button>
+                    )}
+                  </div>
+                </SwipeableTrackRow>
               );
             })}
           </div>
