@@ -4,6 +4,7 @@ import {
   Heart,
   ListMusic,
   Loader2,
+  Mic2,
   MoreVertical,
   Pause,
   Play,
@@ -16,10 +17,12 @@ import {
   Volume1,
   Volume2,
   VolumeX,
+  X,
 } from "lucide-react";
 import { usePlayerStore } from "../store/usePlayerStore";
 import { formatTime } from "../utils/format";
 import { DownloadStatusIcon } from "./DownloadStatusIcon";
+import { LyricsPanel } from "./LyricsPanel";
 import { TrackArtwork } from "./TrackArtwork";
 import { TrackContextMenu, type ContextMenuState } from "./TrackContextMenu";
 
@@ -248,6 +251,7 @@ export const PlayerBar: React.FC = () => {
     null
   );
   const [npEntered, setNpEntered] = useState(false);
+  const [isLyricsOpen, setIsLyricsOpen] = useState(false);
 
   const volumeBarRef = useRef<HTMLDivElement | null>(null);
   const miniBarRef = useRef<HTMLDivElement | null>(null);
@@ -296,6 +300,7 @@ export const PlayerBar: React.FC = () => {
     if (!currentTrack) {
       setIsMobileExpanded(false);
       setNowPlayingMenu(null);
+      setIsLyricsOpen(false);
     }
   }, [currentTrack, setIsMobileExpanded]);
 
@@ -1000,6 +1005,19 @@ export const PlayerBar: React.FC = () => {
               <div className="flex items-center -mr-2">
                 <button
                   type="button"
+                  onClick={() => setIsLyricsOpen((v) => !v)}
+                  aria-pressed={isLyricsOpen}
+                  aria-label={isLyricsOpen ? "Show album artwork" : "Show lyrics"}
+                  className={`min-w-[40px] min-h-[44px] flex items-center justify-center rounded-full transition-colors ${
+                    isLyricsOpen
+                      ? "text-[#FF5E4D] bg-[#FF5E4D]/15"
+                      : "text-white hover:bg-white/10"
+                  }`}
+                >
+                  <Mic2 size={20} />
+                </button>
+                <button
+                  type="button"
                   onClick={() => {
                     setIsMobileExpanded(false);
                     navigate({ type: "queue" });
@@ -1031,29 +1049,39 @@ export const PlayerBar: React.FC = () => {
             </div>
           </div>
 
-          {/* Large Centered Artwork */}
-          <div
-            data-np-track-swipe="true"
-            data-no-tab-swipe="true"
-            className="my-4 flex-1 flex items-center justify-center overflow-hidden"
-          >
-            <div
-              ref={npArtworkRef}
-              className="relative w-full max-w-[320px] aspect-square rounded-xl overflow-hidden shadow-2xl bg-[#141414]"
-            >
-              <TrackArtwork
-                src={currentTrack.thumbnail}
-                alt={currentTrack.title}
-                iconSize={52}
-                className="w-full h-full object-cover"
+          {/* Large Centered Artwork or Synced Lyrics Stage */}
+          {isLyricsOpen ? (
+            <div className="my-3 flex-1 min-h-[220px] max-h-[45vh] w-full flex items-center justify-center overflow-hidden">
+              <LyricsPanel
+                track={currentTrack}
+                durationSeconds={currentTrack.duration_seconds}
+                className="max-w-[380px] h-full"
               />
-              {isBuffering && (
-                <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-                  <Loader2 size={32} className="animate-spin text-[#FF5E4D]" />
-                </div>
-              )}
             </div>
-          </div>
+          ) : (
+            <div
+              data-np-track-swipe="true"
+              data-no-tab-swipe="true"
+              className="my-4 flex-1 flex items-center justify-center overflow-hidden"
+            >
+              <div
+                ref={npArtworkRef}
+                className="relative w-full max-w-[320px] aspect-square rounded-xl overflow-hidden shadow-2xl bg-[#141414]"
+              >
+                <TrackArtwork
+                  src={currentTrack.thumbnail}
+                  alt={currentTrack.title}
+                  iconSize={52}
+                  className="w-full h-full object-cover"
+                />
+                {isBuffering && (
+                  <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                    <Loader2 size={32} className="animate-spin text-[#FF5E4D]" />
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Track Meta, Seek Bar & Controls */}
           <div className="space-y-5">
@@ -1229,18 +1257,33 @@ export const PlayerBar: React.FC = () => {
                 </span>
               )}
 
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-0.5">
+                <button
+                  type="button"
+                  onClick={() => setIsLyricsOpen((v) => !v)}
+                  aria-pressed={isLyricsOpen}
+                  aria-label="Toggle Lyrics"
+                  className={`min-h-[44px] px-2.5 flex items-center gap-1.5 text-xs font-semibold rounded-full transition-colors ${
+                    isLyricsOpen
+                      ? "text-[#FF5E4D] bg-[#FF5E4D]/15"
+                      : "text-[#B3B3B3] hover:text-white"
+                  }`}
+                >
+                  <Mic2 size={15} />
+                  <span>Lyrics</span>
+                </button>
+
                 <button
                   type="button"
                   onClick={() => setJamModalOpen(true)}
                   aria-label="Open BLE Jam and Multi-Speaker"
-                  className={`min-h-[44px] px-3 flex items-center gap-1.5 text-xs font-semibold rounded-full transition-colors ${
+                  className={`min-h-[44px] px-2.5 flex items-center gap-1.5 text-xs font-semibold rounded-full transition-colors ${
                     jamState.active
                       ? "text-[#FF5E4D] bg-[#FF5E4D]/15"
                       : "text-[#B3B3B3] hover:text-white"
                   }`}
                 >
-                  <Speaker size={16} />
+                  <Speaker size={15} />
                   <span>{jamState.active ? "Jam Live" : "Jam"}</span>
                   {jamState.active && (
                     <span className="w-1.5 h-1.5 rounded-full bg-[#FF5E4D] animate-pulse" />
@@ -1253,9 +1296,9 @@ export const PlayerBar: React.FC = () => {
                     setIsMobileExpanded(false);
                     navigate({ type: "queue" });
                   }}
-                  className="min-h-[44px] px-3 flex items-center gap-1.5 text-xs font-semibold text-[#B3B3B3] hover:text-white"
+                  className="min-h-[44px] px-2.5 flex items-center gap-1.5 text-xs font-semibold text-[#B3B3B3] hover:text-white"
                 >
-                  <ListMusic size={16} />
+                  <ListMusic size={15} />
                   <span>Queue</span>
                 </button>
               </div>
@@ -1451,6 +1494,22 @@ export const PlayerBar: React.FC = () => {
 
           <button
             type="button"
+            disabled={!currentTrack}
+            onClick={() => setIsLyricsOpen((v) => !v)}
+            title="Lyrics"
+            aria-pressed={isLyricsOpen}
+            aria-label="Toggle Lyrics"
+            className={`p-1.5 transition-colors disabled:opacity-40 ${
+              isLyricsOpen
+                ? "text-[#FF5E4D]"
+                : "text-[#B3B3B3] hover:text-white"
+            }`}
+          >
+            <Mic2 size={18} />
+          </button>
+
+          <button
+            type="button"
             onClick={() => setJamModalOpen(true)}
             title="BLE Jam & Multi-Speaker"
             aria-label="Open BLE Jam and Multi-Speaker"
@@ -1522,6 +1581,40 @@ export const PlayerBar: React.FC = () => {
           </div>
         </div>
       </footer>
+
+      {/* Desktop Floating Lyrics Card (>= 768px) */}
+      {isLyricsOpen && currentTrack && (
+        <div
+          data-no-tab-swipe="true"
+          className="hidden md:flex fixed bottom-[102px] right-4 z-40 w-[380px] h-[460px] flex-col rounded-xl bg-[#111111] border border-white/10 shadow-2xl overflow-hidden"
+        >
+          <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between gap-2 shrink-0">
+            <div className="min-w-0">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-[#FF5E4D]">
+                Lyrics
+              </p>
+              <p className="text-xs font-bold text-white truncate">
+                {currentTrack.title} • {currentTrack.artist}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsLyricsOpen(false)}
+              aria-label="Close lyrics"
+              className="p-1.5 rounded-full text-[#B3B3B3] hover:text-white hover:bg-white/10 transition-colors"
+            >
+              <X size={16} />
+            </button>
+          </div>
+          <div className="flex-1 min-h-0 p-2">
+            <LyricsPanel
+              track={currentTrack}
+              durationSeconds={currentTrack.duration_seconds}
+              className="border-0 bg-transparent"
+            />
+          </div>
+        </div>
+      )}
 
       <TrackContextMenu
         menu={nowPlayingMenu}
