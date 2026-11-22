@@ -35,6 +35,7 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(XoneAudioPlugin.class);
         registerPlugin(XoneJamPlugin.class);
+        registerPlugin(AppUpdaterPlugin.class);
         super.onCreate(savedInstanceState);
 
         Window window = getWindow();

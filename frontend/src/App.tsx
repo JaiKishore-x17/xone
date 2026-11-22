@@ -8,6 +8,7 @@ import { NewPlaylistModal } from "./components/NewPlaylistModal";
 import { PlayerBar } from "./components/PlayerBar";
 import { Sidebar } from "./components/Sidebar";
 import { TopBar } from "./components/TopBar";
+import { UpdateChecker } from "./components/UpdateChecker";
 import { usePlayerStore } from "./store/usePlayerStore";
 import type { ActiveView } from "./types";
 
@@ -292,6 +293,7 @@ export const App: React.FC = () => {
       {/* Modals & Toast */}
       <NewPlaylistModal />
       <JamModal />
+      <UpdateChecker />
 
       {toastMessage && (
         <div className="fixed bottom-[calc(8rem+env(safe-area-inset-bottom))] md:bottom-28 left-1/2 -translate-x-1/2 z-50 px-5 py-2.5 rounded-full bg-[#FF5E4D] text-black text-xs font-bold shadow-2xl pointer-events-none whitespace-nowrap max-w-[90vw] truncate">
