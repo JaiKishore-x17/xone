@@ -23,7 +23,7 @@ export const MobileBottomNav: React.FC = () => {
     <nav
       aria-label="Mobile Navigation"
       aria-hidden={isKeyboardOpen}
-      className={`fixed bottom-0 left-0 right-0 z-40 h-[calc(3.5rem+env(safe-area-inset-bottom))] pb-[env(safe-area-inset-bottom)] bg-black/95 backdrop-blur-md border-t border-white/10 flex md:hidden items-center justify-around px-2 select-none transition-all duration-150 ease-out ${
+      className={`fixed bottom-0 left-0 right-0 z-40 h-[calc(3.5rem+env(safe-area-inset-bottom))] pb-[env(safe-area-inset-bottom)] bg-black/95 border-t border-white/10 flex md:hidden items-center justify-around px-2 select-none transition-all duration-150 ease-out ${
         isKeyboardOpen
           ? "translate-y-[140%] opacity-0 pointer-events-none"
           : "translate-y-0 opacity-100"

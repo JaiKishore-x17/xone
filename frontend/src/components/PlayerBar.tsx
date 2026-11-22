@@ -23,12 +23,196 @@ import { DownloadStatusIcon } from "./DownloadStatusIcon";
 import { TrackArtwork } from "./TrackArtwork";
 import { TrackContextMenu, type ContextMenuState } from "./TrackContextMenu";
 
+const MiniPlayerProgressBar: React.FC<{ fallbackDuration?: number }> =
+  React.memo(({ fallbackDuration = 0 }) => {
+    const currentTime = usePlayerStore((s) => s.currentTime);
+    const duration = usePlayerStore((s) => s.duration);
+    const effectiveDuration = duration > 0 ? duration : fallbackDuration;
+    const progressPct =
+      effectiveDuration > 0
+        ? Math.min(100, Math.max(0, (currentTime / effectiveDuration) * 100))
+        : 0;
+
+    return (
+      <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-white/10 pointer-events-none">
+        <div
+          className="h-full bg-[#FF5E4D]"
+          style={{ width: `${progressPct}%` }}
+        />
+      </div>
+    );
+  });
+
+MiniPlayerProgressBar.displayName = "MiniPlayerProgressBar";
+
+const computeBarRatio = (
+  clientX: number,
+  el: HTMLDivElement | null
+): number => {
+  if (!el) return 0;
+  const rect = el.getBoundingClientRect();
+  if (rect.width <= 0) return 0;
+  return Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+};
+
+const MobileSeekSection: React.FC<{
+  hasTrack: boolean;
+  fallbackDuration?: number;
+}> = React.memo(({ hasTrack, fallbackDuration = 0 }) => {
+  const currentTime = usePlayerStore((s) => s.currentTime);
+  const duration = usePlayerStore((s) => s.duration);
+  const seekTo = usePlayerStore((s) => s.seekTo);
+
+  const barRef = useRef<HTMLDivElement | null>(null);
+  const [isDraggingSeek, setIsDraggingSeek] = useState(false);
+  const [dragSeekValue, setDragSeekValue] = useState(0);
+
+  const effectiveDuration = duration > 0 ? duration : fallbackDuration;
+  const displayedTime = isDraggingSeek ? dragSeekValue : currentTime;
+  const progressPct =
+    effectiveDuration > 0
+      ? Math.min(100, Math.max(0, (displayedTime / effectiveDuration) * 100))
+      : 0;
+
+  return (
+    <div>
+      <div
+        ref={barRef}
+        data-no-tab-swipe="true"
+        onPointerDown={(e) => {
+          if (!hasTrack || effectiveDuration <= 0) return;
+          e.currentTarget.setPointerCapture(e.pointerId);
+          const ratio = computeBarRatio(e.clientX, barRef.current);
+          setIsDraggingSeek(true);
+          setDragSeekValue(ratio * effectiveDuration);
+        }}
+        onPointerMove={(e) => {
+          if (!isDraggingSeek || effectiveDuration <= 0) return;
+          const ratio = computeBarRatio(e.clientX, barRef.current);
+          setDragSeekValue(ratio * effectiveDuration);
+        }}
+        onPointerUp={(e) => {
+          if (!isDraggingSeek) return;
+          const ratio = computeBarRatio(e.clientX, barRef.current);
+          setIsDraggingSeek(false);
+          seekTo(ratio * effectiveDuration);
+        }}
+        onPointerCancel={() => setIsDraggingSeek(false)}
+        role="slider"
+        aria-label="Seek audio position"
+        aria-valuemin={0}
+        aria-valuemax={Math.round(effectiveDuration)}
+        aria-valuenow={Math.round(displayedTime)}
+        className="relative w-full h-8 flex items-center cursor-pointer touch-none"
+      >
+        <div className="w-full h-1.5 rounded-full bg-white/20 overflow-hidden">
+          <div
+            className="h-full rounded-full bg-[#FF5E4D]"
+            style={{ width: `${progressPct}%` }}
+          />
+        </div>
+        <div
+          className="absolute w-4 h-4 rounded-full bg-[#FF5E4D] shadow-lg pointer-events-none -translate-x-1/2"
+          style={{ left: `${progressPct}%` }}
+        />
+      </div>
+      <div className="flex items-center justify-between text-xs tabular-nums text-[#B3B3B3] -mt-1">
+        <span>{formatTime(displayedTime)}</span>
+        <span>{formatTime(effectiveDuration)}</span>
+      </div>
+    </div>
+  );
+});
+
+MobileSeekSection.displayName = "MobileSeekSection";
+
+const DesktopSeekSection: React.FC<{
+  hasTrack: boolean;
+  fallbackDuration?: number;
+}> = React.memo(({ hasTrack, fallbackDuration = 0 }) => {
+  const currentTime = usePlayerStore((s) => s.currentTime);
+  const duration = usePlayerStore((s) => s.duration);
+  const seekTo = usePlayerStore((s) => s.seekTo);
+
+  const barRef = useRef<HTMLDivElement | null>(null);
+  const [isDraggingSeek, setIsDraggingSeek] = useState(false);
+  const [dragSeekValue, setDragSeekValue] = useState(0);
+
+  const effectiveDuration = duration > 0 ? duration : fallbackDuration;
+  const displayedTime = isDraggingSeek ? dragSeekValue : currentTime;
+  const progressPct =
+    effectiveDuration > 0
+      ? Math.min(100, Math.max(0, (displayedTime / effectiveDuration) * 100))
+      : 0;
+
+  return (
+    <div className="w-full flex items-center gap-2.5">
+      <span className="text-[11px] tabular-nums text-[#A7A7A7] w-10 text-right">
+        {formatTime(displayedTime)}
+      </span>
+      <div
+        ref={barRef}
+        data-no-tab-swipe="true"
+        onPointerDown={(e) => {
+          if (!hasTrack || effectiveDuration <= 0) return;
+          e.currentTarget.setPointerCapture(e.pointerId);
+          const ratio = computeBarRatio(e.clientX, barRef.current);
+          setIsDraggingSeek(true);
+          setDragSeekValue(ratio * effectiveDuration);
+        }}
+        onPointerMove={(e) => {
+          if (!isDraggingSeek || effectiveDuration <= 0) return;
+          const ratio = computeBarRatio(e.clientX, barRef.current);
+          setDragSeekValue(ratio * effectiveDuration);
+        }}
+        onPointerUp={(e) => {
+          if (!isDraggingSeek) return;
+          const ratio = computeBarRatio(e.clientX, barRef.current);
+          setIsDraggingSeek(false);
+          seekTo(ratio * effectiveDuration);
+        }}
+        onPointerCancel={() => setIsDraggingSeek(false)}
+        role="slider"
+        aria-label="Seek audio position"
+        aria-valuemin={0}
+        aria-valuemax={Math.round(effectiveDuration)}
+        aria-valuenow={Math.round(displayedTime)}
+        className="group relative flex-1 h-4 flex items-center cursor-pointer touch-none"
+      >
+        <div className="w-full h-1 rounded-full bg-[#4D4D4D] overflow-hidden">
+          <div
+            className="h-full rounded-full bg-white group-hover:bg-[#FF5E4D] transition-colors"
+            style={{
+              width: `${progressPct}%`,
+              backgroundColor: isDraggingSeek ? "#FF5E4D" : undefined,
+            }}
+          />
+        </div>
+        <div
+          className="absolute left-0 h-1 rounded-full bg-[#FF5E4D] pointer-events-none"
+          style={{ width: `${progressPct}%` }}
+        />
+        <div
+          className="absolute w-3 h-3 rounded-full bg-white shadow opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none -translate-x-1/2"
+          style={{
+            left: `${progressPct}%`,
+            opacity: isDraggingSeek ? 1 : undefined,
+          }}
+        />
+      </div>
+      <span className="text-[11px] tabular-nums text-[#A7A7A7] w-10">
+        {formatTime(effectiveDuration)}
+      </span>
+    </div>
+  );
+});
+
+DesktopSeekSection.displayName = "DesktopSeekSection";
+
 export const PlayerBar: React.FC = () => {
   const currentTrack = usePlayerStore((s) => s.currentTrack);
   const isPlaying = usePlayerStore((s) => s.isPlaying);
   const isBuffering = usePlayerStore((s) => s.isBuffering);
-  const currentTime = usePlayerStore((s) => s.currentTime);
-  const duration = usePlayerStore((s) => s.duration);
   const volume = usePlayerStore((s) => s.volume);
   const isMuted = usePlayerStore((s) => s.isMuted);
   const shuffle = usePlayerStore((s) => s.shuffle);
@@ -49,7 +233,6 @@ export const PlayerBar: React.FC = () => {
   const playPreviousTrack = usePlayerStore((s) => s.playPreviousTrack);
   const toggleShuffle = usePlayerStore((s) => s.toggleShuffle);
   const cycleRepeat = usePlayerStore((s) => s.cycleRepeat);
-  const seekTo = usePlayerStore((s) => s.seekTo);
   const setVolume = usePlayerStore((s) => s.setVolume);
   const toggleMute = usePlayerStore((s) => s.toggleMute);
   const toggleLike = usePlayerStore((s) => s.toggleLike);
@@ -61,33 +244,31 @@ export const PlayerBar: React.FC = () => {
   const isMobileExpanded = usePlayerStore((s) => s.isMobilePlayerExpanded);
   const setIsMobileExpanded = usePlayerStore((s) => s.setMobilePlayerExpanded);
 
-  const [isDraggingSeek, setIsDraggingSeek] = useState(false);
-  const [dragSeekValue, setDragSeekValue] = useState(0);
-  const [miniDragX, setMiniDragX] = useState(0);
-  const [miniDragY, setMiniDragY] = useState(0);
-  const [miniOpacity, setMiniOpacity] = useState(1);
-  const [miniTransition, setMiniTransition] = useState("none");
-  const [miniYTransition, setMiniYTransition] = useState("none");
   const [nowPlayingMenu, setNowPlayingMenu] = useState<ContextMenuState | null>(
     null
   );
   const [npEntered, setNpEntered] = useState(false);
-  const [npDragY, setNpDragY] = useState(0);
-  const [npTransition, setNpTransition] = useState("none");
-  const [npTrackDragX, setNpTrackDragX] = useState(0);
-  const [npTrackOpacity, setNpTrackOpacity] = useState(1);
-  const [npTrackTransition, setNpTrackTransition] = useState("none");
 
-  const seekBarRef = useRef<HTMLDivElement | null>(null);
-  const mobileSeekBarRef = useRef<HTMLDivElement | null>(null);
   const volumeBarRef = useRef<HTMLDivElement | null>(null);
+  const miniBarRef = useRef<HTMLDivElement | null>(null);
+  const miniTrackRef = useRef<HTMLDivElement | null>(null);
   const npSheetRef = useRef<HTMLDivElement | null>(null);
+  const npArtworkRef = useRef<HTMLDivElement | null>(null);
+  const npMetaRef = useRef<HTMLDivElement | null>(null);
+
   const miniTouchRef = useRef<{
     startX: number;
     startY: number;
     maxMove: number;
     lockedAxis: "x" | "y" | null;
   } | null>(null);
+  const miniDragXRef = useRef(0);
+  const miniDragYRef = useRef(0);
+  const miniDragRafRef = useRef<number | null>(null);
+  const pendingMiniDragRef = useRef<{ axis: "x" | "y"; value: number } | null>(
+    null
+  );
+
   const npTouchRef = useRef<{
     startX: number;
     startY: number;
@@ -97,6 +278,13 @@ export const PlayerBar: React.FC = () => {
     lockedAxis: "x" | "y" | null;
     dragging: boolean;
   } | null>(null);
+  const npDragYRef = useRef(0);
+  const npTrackDragXRef = useRef(0);
+  const npDragRafRef = useRef<number | null>(null);
+  const pendingNpDragRef = useRef<
+    { axis: "x"; x: number } | { axis: "y"; y: number } | null
+  >(null);
+
   const miniAnimTimerRef = useRef<number | null>(null);
   const miniRafRef = useRef<number | null>(null);
   const npDismissTimerRef = useRef<number | null>(null);
@@ -120,20 +308,39 @@ export const PlayerBar: React.FC = () => {
       window.cancelAnimationFrame(npTrackRafRef.current);
       npTrackRafRef.current = null;
     }
-    setNpTrackDragX(0);
-    setNpTrackOpacity(1);
-    setNpTrackTransition("none");
+    if (npDragRafRef.current !== null) {
+      window.cancelAnimationFrame(npDragRafRef.current);
+      npDragRafRef.current = null;
+    }
+    pendingNpDragRef.current = null;
+    npDragYRef.current = 0;
+    npTrackDragXRef.current = 0;
+
+    if (npArtworkRef.current) {
+      npArtworkRef.current.style.transition = "none";
+      npArtworkRef.current.style.transform = "translate3d(0px, 0, 0)";
+      npArtworkRef.current.style.opacity = "1";
+    }
+    if (npMetaRef.current) {
+      npMetaRef.current.style.transition = "none";
+      npMetaRef.current.style.transform = "translate3d(0px, 0, 0)";
+      npMetaRef.current.style.opacity = "1";
+    }
 
     if (!isMobileExpanded) {
       setNpEntered(false);
-      setNpDragY(0);
-      setNpTransition("none");
       setNowPlayingMenu(null);
       return;
     }
+
+    if (npSheetRef.current) {
+      npSheetRef.current.scrollTo({ top: 0, behavior: "instant" });
+      npSheetRef.current.style.transition =
+        "transform 260ms cubic-bezier(0.22, 1, 0.36, 1)";
+      npSheetRef.current.style.transform = "";
+    }
+
     setNpEntered(false);
-    setNpDragY(0);
-    setNpTransition("none");
     let cancelled = false;
     let raf2 = 0;
     const raf1 = window.requestAnimationFrame(() => {
@@ -158,6 +365,9 @@ export const PlayerBar: React.FC = () => {
       if (miniRafRef.current !== null) {
         window.cancelAnimationFrame(miniRafRef.current);
       }
+      if (miniDragRafRef.current !== null) {
+        window.cancelAnimationFrame(miniDragRafRef.current);
+      }
       if (npDismissTimerRef.current !== null) {
         window.clearTimeout(npDismissTimerRef.current);
       }
@@ -167,16 +377,12 @@ export const PlayerBar: React.FC = () => {
       if (npTrackRafRef.current !== null) {
         window.cancelAnimationFrame(npTrackRafRef.current);
       }
+      if (npDragRafRef.current !== null) {
+        window.cancelAnimationFrame(npDragRafRef.current);
+      }
     };
   }, []);
 
-  const effectiveDuration =
-    duration > 0 ? duration : currentTrack?.duration_seconds || 0;
-  const displayedTime = isDraggingSeek ? dragSeekValue : currentTime;
-  const progressPct =
-    effectiveDuration > 0
-      ? Math.min(100, Math.max(0, (displayedTime / effectiveDuration) * 100))
-      : 0;
   const effectiveVolume = isMuted ? 0 : volume;
   const volumePct = Math.round(effectiveVolume * 100);
   const isLiked = currentTrack ? Boolean(likedIds[currentTrack.video_id]) : false;
@@ -186,47 +392,6 @@ export const PlayerBar: React.FC = () => {
   const isDownloading = currentTrack
     ? Boolean(downloadingIds[currentTrack.video_id])
     : false;
-
-  const computeBarRatio = (
-    clientX: number,
-    el: HTMLDivElement | null
-  ): number => {
-    if (!el) return 0;
-    const rect = el.getBoundingClientRect();
-    if (rect.width <= 0) return 0;
-    return Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
-  };
-
-  const handleSeekPointerDown = (
-    e: React.PointerEvent<HTMLDivElement>,
-    barEl: HTMLDivElement | null
-  ) => {
-    if (!currentTrack || effectiveDuration <= 0) return;
-    e.currentTarget.setPointerCapture(e.pointerId);
-    const ratio = computeBarRatio(e.clientX, barEl);
-    setIsDraggingSeek(true);
-    setDragSeekValue(ratio * effectiveDuration);
-  };
-
-  const handleSeekPointerMove = (
-    e: React.PointerEvent<HTMLDivElement>,
-    barEl: HTMLDivElement | null
-  ) => {
-    if (!isDraggingSeek || effectiveDuration <= 0) return;
-    const ratio = computeBarRatio(e.clientX, barEl);
-    setDragSeekValue(ratio * effectiveDuration);
-  };
-
-  const handleSeekPointerUp = (
-    e: React.PointerEvent<HTMLDivElement>,
-    barEl: HTMLDivElement | null
-  ) => {
-    if (!isDraggingSeek) return;
-    const ratio = computeBarRatio(e.clientX, barEl);
-    const targetSeconds = ratio * effectiveDuration;
-    setIsDraggingSeek(false);
-    seekTo(targetSeconds);
-  };
 
   const handleVolumePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     e.currentTarget.setPointerCapture(e.pointerId);
@@ -240,14 +405,46 @@ export const PlayerBar: React.FC = () => {
     setVolume(ratio);
   };
 
+  const cancelMiniDragRaf = () => {
+    if (miniDragRafRef.current !== null) {
+      window.cancelAnimationFrame(miniDragRafRef.current);
+      miniDragRafRef.current = null;
+    }
+    pendingMiniDragRef.current = null;
+  };
+
+  const applyMiniHorizontalVisuals = (
+    x: number,
+    opacity: number,
+    transition: string
+  ) => {
+    miniDragXRef.current = x;
+    const el = miniTrackRef.current;
+    if (!el) return;
+    el.style.transition = transition;
+    el.style.transform = `translate3d(${x}px, 0, 0)`;
+    el.style.opacity = String(opacity);
+  };
+
+  const applyMiniVerticalVisuals = (y: number, transition: string) => {
+    miniDragYRef.current = y;
+    const el = miniBarRef.current;
+    if (!el) return;
+    el.style.transition =
+      transition !== "none"
+        ? `${transition}, opacity 150ms ease-out`
+        : "opacity 150ms ease-out";
+    el.style.transform = y < 0 ? `translate3d(0, ${y}px, 0)` : "";
+  };
+
   const resetMiniDragPosition = () => {
-    setMiniTransition(
+    cancelMiniDragRaf();
+    applyMiniHorizontalVisuals(
+      0,
+      1,
       "transform 200ms cubic-bezier(0.22, 1, 0.36, 1), opacity 200ms ease-out"
     );
-    setMiniYTransition("transform 200ms cubic-bezier(0.22, 1, 0.36, 1)");
-    setMiniDragX(0);
-    setMiniDragY(0);
-    setMiniOpacity(1);
+    applyMiniVerticalVisuals(0, "transform 200ms cubic-bezier(0.22, 1, 0.36, 1)");
   };
 
   const handleMiniTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
@@ -262,6 +459,7 @@ export const PlayerBar: React.FC = () => {
       window.cancelAnimationFrame(miniRafRef.current);
       miniRafRef.current = null;
     }
+    cancelMiniDragRaf();
     miniTouchRef.current = {
       startX: e.touches[0].clientX,
       startY: e.touches[0].clientY,
@@ -269,8 +467,6 @@ export const PlayerBar: React.FC = () => {
       lockedAxis: null,
     };
     suppressExpandClickRef.current = false;
-    setMiniTransition("none");
-    setMiniYTransition("none");
   };
 
   const handleMiniTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
@@ -295,14 +491,32 @@ export const PlayerBar: React.FC = () => {
     }
 
     if (drag.lockedAxis === "x") {
-      const clampedX = Math.max(-110, Math.min(110, dx));
-      setMiniTransition("none");
-      setMiniDragX(clampedX);
-      setMiniOpacity(Math.max(0.15, 1 - Math.abs(clampedX) / 140));
+      pendingMiniDragRef.current = {
+        axis: "x",
+        value: Math.max(-110, Math.min(110, dx)),
+      };
     } else if (drag.lockedAxis === "y" && dy < 0) {
-      const clampedY = Math.max(-90, dy);
-      setMiniYTransition("none");
-      setMiniDragY(clampedY);
+      pendingMiniDragRef.current = {
+        axis: "y",
+        value: Math.max(-90, dy),
+      };
+    } else {
+      return;
+    }
+
+    if (miniDragRafRef.current === null) {
+      miniDragRafRef.current = window.requestAnimationFrame(() => {
+        miniDragRafRef.current = null;
+        const next = pendingMiniDragRef.current;
+        pendingMiniDragRef.current = null;
+        if (!next) return;
+        if (next.axis === "x") {
+          const opacity = Math.max(0.15, 1 - Math.abs(next.value) / 140);
+          applyMiniHorizontalVisuals(next.value, opacity, "none");
+        } else {
+          applyMiniVerticalVisuals(next.value, "none");
+        }
+      });
     }
   };
 
@@ -310,9 +524,12 @@ export const PlayerBar: React.FC = () => {
     const exitX = direction === "next" ? -110 : 110;
     const enterX = direction === "next" ? 70 : -70;
 
-    setMiniTransition("transform 140ms ease-out, opacity 140ms ease-out");
-    setMiniDragX(exitX);
-    setMiniOpacity(0);
+    cancelMiniDragRaf();
+    applyMiniHorizontalVisuals(
+      exitX,
+      0,
+      "transform 140ms ease-out, opacity 140ms ease-out"
+    );
 
     miniAnimTimerRef.current = window.setTimeout(() => {
       miniAnimTimerRef.current = null;
@@ -321,18 +538,16 @@ export const PlayerBar: React.FC = () => {
       } else {
         playPreviousTrack();
       }
-      setMiniTransition("none");
-      setMiniDragX(enterX);
-      setMiniOpacity(0);
+      applyMiniHorizontalVisuals(enterX, 0, "none");
 
       miniRafRef.current = window.requestAnimationFrame(() => {
         miniRafRef.current = window.requestAnimationFrame(() => {
           miniRafRef.current = null;
-          setMiniTransition(
+          applyMiniHorizontalVisuals(
+            0,
+            1,
             "transform 220ms cubic-bezier(0.22, 1, 0.36, 1), opacity 220ms ease-out"
           );
-          setMiniDragX(0);
-          setMiniOpacity(1);
         });
       });
     }, 140);
@@ -341,16 +556,17 @@ export const PlayerBar: React.FC = () => {
   const handleMiniTouchEnd = (e: React.TouchEvent<HTMLDivElement>) => {
     const drag = miniTouchRef.current;
     miniTouchRef.current = null;
+    cancelMiniDragRaf();
     if (!drag) return;
 
     const dx =
       e.changedTouches.length > 0
         ? e.changedTouches[0].clientX - drag.startX
-        : miniDragX;
+        : miniDragXRef.current;
     const dy =
       e.changedTouches.length > 0
         ? e.changedTouches[0].clientY - drag.startY
-        : miniDragY;
+        : miniDragYRef.current;
     const totalMove = Math.max(drag.maxMove, Math.hypot(dx, dy));
 
     if (totalMove >= 8) {
@@ -366,10 +582,8 @@ export const PlayerBar: React.FC = () => {
 
     if (drag.lockedAxis === "y") {
       if (dy < -45 && Math.abs(dy) > Math.abs(dx) * 1.4) {
-        setMiniYTransition("none");
-        setMiniDragY(0);
-        setMiniDragX(0);
-        setMiniOpacity(1);
+        applyMiniVerticalVisuals(0, "none");
+        applyMiniHorizontalVisuals(0, 1, "none");
         setIsMobileExpanded(true);
       } else {
         resetMiniDragPosition();
@@ -392,6 +606,43 @@ export const PlayerBar: React.FC = () => {
     resetMiniDragPosition();
   };
 
+  const cancelNpDragRaf = () => {
+    if (npDragRafRef.current !== null) {
+      window.cancelAnimationFrame(npDragRafRef.current);
+      npDragRafRef.current = null;
+    }
+    pendingNpDragRef.current = null;
+  };
+
+  const applyNpTrackVisuals = (
+    x: number,
+    opacity: number,
+    transition: string
+  ) => {
+    npTrackDragXRef.current = x;
+    const scale = 1 - Math.min(0.04, Math.abs(x) / 2800);
+    const transform = `translate3d(${x}px, 0, 0) scale3d(${scale}, ${scale}, 1)`;
+    if (npArtworkRef.current) {
+      npArtworkRef.current.style.transition = transition;
+      npArtworkRef.current.style.transform = transform;
+      npArtworkRef.current.style.opacity = String(opacity);
+    }
+    if (npMetaRef.current) {
+      npMetaRef.current.style.transition = transition;
+      npMetaRef.current.style.transform = transform;
+      npMetaRef.current.style.opacity = String(opacity);
+    }
+  };
+
+  const applyNpSheetVisuals = (y: number, transition: string) => {
+    npDragYRef.current = y;
+    const sheet = npSheetRef.current;
+    if (!sheet) return;
+    sheet.style.transition = transition;
+    sheet.style.transform =
+      y > 0 ? `translate3d(0, ${y}px, 0)` : "translate3d(0, 0, 0)";
+  };
+
   const clearNpTrackAnimTimers = () => {
     if (npTrackAnimTimerRef.current !== null) {
       window.clearTimeout(npTrackAnimTimerRef.current);
@@ -404,21 +655,24 @@ export const PlayerBar: React.FC = () => {
   };
 
   const resetNpTrackPosition = () => {
-    setNpTrackTransition(
+    applyNpTrackVisuals(
+      0,
+      1,
       "transform 200ms cubic-bezier(0.22, 1, 0.36, 1), opacity 200ms ease-out"
     );
-    setNpTrackDragX(0);
-    setNpTrackOpacity(1);
   };
 
   const triggerNpSwipeSkip = (direction: "next" | "prev") => {
     clearNpTrackAnimTimers();
+    cancelNpDragRaf();
     const exitX = direction === "next" ? -160 : 160;
     const enterX = direction === "next" ? 110 : -110;
 
-    setNpTrackTransition("transform 140ms ease-in, opacity 140ms ease-in");
-    setNpTrackDragX(exitX);
-    setNpTrackOpacity(0);
+    applyNpTrackVisuals(
+      exitX,
+      0,
+      "transform 140ms ease-in, opacity 140ms ease-in"
+    );
 
     npTrackAnimTimerRef.current = window.setTimeout(() => {
       npTrackAnimTimerRef.current = null;
@@ -427,18 +681,16 @@ export const PlayerBar: React.FC = () => {
       } else {
         playPreviousTrack();
       }
-      setNpTrackTransition("none");
-      setNpTrackDragX(enterX);
-      setNpTrackOpacity(0);
+      applyNpTrackVisuals(enterX, 0, "none");
 
       npTrackRafRef.current = window.requestAnimationFrame(() => {
         npTrackRafRef.current = window.requestAnimationFrame(() => {
           npTrackRafRef.current = null;
-          setNpTrackTransition(
+          applyNpTrackVisuals(
+            0,
+            1,
             "transform 220ms cubic-bezier(0.22, 1, 0.36, 1), opacity 220ms ease-out"
           );
-          setNpTrackDragX(0);
-          setNpTrackOpacity(1);
         });
       });
     }, 140);
@@ -449,9 +701,9 @@ export const PlayerBar: React.FC = () => {
       window.clearTimeout(npDismissTimerRef.current);
       npDismissTimerRef.current = null;
     }
+    cancelNpDragRaf();
     const exitY = typeof window !== "undefined" ? window.innerHeight : 850;
-    setNpTransition("transform 200ms ease-in");
-    setNpDragY(exitY);
+    applyNpSheetVisuals(exitY, "transform 200ms ease-in");
     npDismissTimerRef.current = window.setTimeout(() => {
       npDismissTimerRef.current = null;
       setIsMobileExpanded(false);
@@ -473,6 +725,7 @@ export const PlayerBar: React.FC = () => {
       window.clearTimeout(npDismissTimerRef.current);
       npDismissTimerRef.current = null;
     }
+    cancelNpDragRaf();
     const sheet = npSheetRef.current;
     const onHeaderOrHandle = Boolean(target?.closest("[data-np-handle]"));
     const canDragDown = onHeaderOrHandle || !sheet || sheet.scrollTop <= 4;
@@ -514,34 +767,53 @@ export const PlayerBar: React.FC = () => {
 
     if (drag.lockedAxis === "x") {
       drag.dragging = true;
-      const clampedX = Math.max(-140, Math.min(140, dx));
-      setNpTrackTransition("none");
-      setNpTrackDragX(clampedX);
-      setNpTrackOpacity(Math.max(0.45, 1 - Math.abs(clampedX) / 220));
+      pendingNpDragRef.current = {
+        axis: "x",
+        x: Math.max(-140, Math.min(140, dx)),
+      };
     } else if (drag.lockedAxis === "y" && drag.canDragDown) {
       if (dy > 6) {
         drag.dragging = true;
-        setNpTransition("none");
-        setNpDragY(dy);
+        pendingNpDragRef.current = { axis: "y", y: dy };
       } else if (drag.dragging && dy <= 0) {
-        setNpDragY(0);
+        pendingNpDragRef.current = { axis: "y", y: 0 };
+      } else {
+        return;
       }
+    } else {
+      return;
+    }
+
+    if (npDragRafRef.current === null) {
+      npDragRafRef.current = window.requestAnimationFrame(() => {
+        npDragRafRef.current = null;
+        const next = pendingNpDragRef.current;
+        pendingNpDragRef.current = null;
+        if (!next) return;
+        if (next.axis === "x") {
+          const opacity = Math.max(0.45, 1 - Math.abs(next.x) / 220);
+          applyNpTrackVisuals(next.x, opacity, "none");
+        } else {
+          applyNpSheetVisuals(next.y, "none");
+        }
+      });
     }
   };
 
   const handleNpTouchEnd = (e: React.TouchEvent<HTMLDivElement>) => {
     const drag = npTouchRef.current;
     npTouchRef.current = null;
+    cancelNpDragRaf();
     if (!drag || !drag.dragging) return;
 
     const dx =
       e.changedTouches.length > 0
         ? e.changedTouches[0].clientX - drag.startX
-        : npTrackDragX;
+        : npTrackDragXRef.current;
     const dy =
       e.changedTouches.length > 0
         ? e.changedTouches[0].clientY - drag.startY
-        : npDragY;
+        : npDragYRef.current;
 
     if (drag.lockedAxis === "x") {
       if (dx <= -65) {
@@ -560,15 +832,14 @@ export const PlayerBar: React.FC = () => {
     if (dy > 110 || (dy > 50 && velocity > 0.65)) {
       closeNowPlayingSmooth();
     } else {
-      setNpTransition("transform 220ms cubic-bezier(0.22, 1, 0.36, 1)");
-      setNpDragY(0);
+      applyNpSheetVisuals(0, "transform 220ms cubic-bezier(0.22, 1, 0.36, 1)");
     }
   };
 
   const handleNpTouchCancel = () => {
     npTouchRef.current = null;
-    setNpTransition("transform 220ms cubic-bezier(0.22, 1, 0.36, 1)");
-    setNpDragY(0);
+    cancelNpDragRaf();
+    applyNpSheetVisuals(0, "transform 220ms cubic-bezier(0.22, 1, 0.36, 1)");
     resetNpTrackPosition();
   };
 
@@ -577,6 +848,7 @@ export const PlayerBar: React.FC = () => {
       {/* ===================== COMPACT MOBILE MINI-PLAYER (< 768px) ===================== */}
       {currentTrack && (
         <div
+          ref={miniBarRef}
           data-no-tab-swipe="true"
           onTouchStart={handleMiniTouchStart}
           onTouchMove={handleMiniTouchMove}
@@ -595,31 +867,21 @@ export const PlayerBar: React.FC = () => {
             if (e.key === "Enter") setIsMobileExpanded(true);
           }}
           style={{
-            transform: isKeyboardOpen
-              ? "translateY(140%)"
-              : miniDragY < 0
-                ? `translateY(${miniDragY}px)`
-                : undefined,
+            transform: isKeyboardOpen ? "translate3d(0, 140%, 0)" : undefined,
             transition: isKeyboardOpen
               ? "transform 150ms ease-out, opacity 150ms ease-out"
-              : miniYTransition !== "none"
-                ? `${miniYTransition}, opacity 150ms ease-out`
-                : "opacity 150ms ease-out",
+              : "opacity 150ms ease-out",
           }}
           aria-hidden={isKeyboardOpen}
           aria-label="Open full-screen now playing controls"
-          className={`fixed bottom-[calc(3.5rem+env(safe-area-inset-bottom))] left-2 right-2 z-40 md:hidden rounded-lg bg-[#141414] border border-white/10 p-2 shadow-2xl overflow-hidden select-none cursor-pointer touch-none ${
+          className={`fixed bottom-[calc(3.5rem+env(safe-area-inset-bottom))] left-2 right-2 z-40 md:hidden rounded-lg bg-black/95 border border-white/10 p-2 shadow-2xl overflow-hidden select-none cursor-pointer touch-none ${
             isKeyboardOpen ? "opacity-0 pointer-events-none" : "opacity-100"
           }`}
         >
           <div className="flex items-center gap-2.5">
             <div className="flex-1 min-w-0 overflow-hidden">
               <div
-                style={{
-                  transform: `translateX(${miniDragX}px)`,
-                  opacity: miniOpacity,
-                  transition: miniTransition,
-                }}
+                ref={miniTrackRef}
                 className="flex items-center gap-2.5 min-w-0"
               >
                 <div className="relative w-10 h-10 rounded overflow-hidden shrink-0 bg-black">
@@ -690,12 +952,9 @@ export const PlayerBar: React.FC = () => {
           </div>
 
           {/* 2px Hyper Coral Progress Bar along bottom edge */}
-          <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-white/10 pointer-events-none">
-            <div
-              className="h-full bg-[#FF5E4D]"
-              style={{ width: `${progressPct}%` }}
-            />
-          </div>
+          <MiniPlayerProgressBar
+            fallbackDuration={currentTrack.duration_seconds}
+          />
         </div>
       )}
 
@@ -709,18 +968,12 @@ export const PlayerBar: React.FC = () => {
           onTouchEnd={handleNpTouchEnd}
           onTouchCancel={handleNpTouchCancel}
           style={{
-            transform:
-              npDragY > 0
-                ? `translateY(${npDragY}px)`
-                : npEntered
-                  ? "translateY(0)"
-                  : "translateY(100%)",
-            transition:
-              npDragY > 0 || npTransition !== "none"
-                ? npTransition
-                : "transform 260ms cubic-bezier(0.22, 1, 0.36, 1)",
+            transform: npEntered
+              ? "translate3d(0, 0, 0)"
+              : "translate3d(0, 100%, 0)",
+            transition: "transform 260ms cubic-bezier(0.22, 1, 0.36, 1)",
           }}
-          className="fixed inset-0 z-50 md:hidden bg-gradient-to-b from-[#1E1E1E] via-[#000000] to-[#000000] flex flex-col justify-between px-6 pt-[calc(0.75rem+env(safe-area-inset-top))] pb-[calc(2rem+env(safe-area-inset-bottom))] overflow-y-auto overflow-x-hidden select-none"
+          className="fixed inset-0 z-50 md:hidden bg-gradient-to-b from-[#1E1E1E] via-[#000000] to-[#000000] flex flex-col justify-between px-6 pt-[calc(0.75rem+env(safe-area-inset-top))] pb-[calc(2rem+env(safe-area-inset-bottom))] overflow-y-auto overflow-x-hidden xone-modal-scroll overscroll-y-contain select-none"
         >
           {/* Top Drag Handle Pill + Header */}
           <div data-np-handle="true">
@@ -785,11 +1038,7 @@ export const PlayerBar: React.FC = () => {
             className="my-4 flex-1 flex items-center justify-center overflow-hidden"
           >
             <div
-              style={{
-                transform: `translate3d(${npTrackDragX}px, 0, 0) scale(${1 - Math.min(0.04, Math.abs(npTrackDragX) / 2800)})`,
-                opacity: npTrackOpacity,
-                transition: npTrackTransition,
-              }}
+              ref={npArtworkRef}
               className="relative w-full max-w-[320px] aspect-square rounded-xl overflow-hidden shadow-2xl bg-[#141414]"
             >
               <TrackArtwork
@@ -814,13 +1063,7 @@ export const PlayerBar: React.FC = () => {
                 data-no-tab-swipe="true"
                 className="min-w-0 flex-1 overflow-hidden"
               >
-                <div
-                  style={{
-                    transform: `translate3d(${npTrackDragX}px, 0, 0) scale(${1 - Math.min(0.04, Math.abs(npTrackDragX) / 2800)})`,
-                    opacity: npTrackOpacity,
-                    transition: npTrackTransition,
-                  }}
-                >
+                <div ref={npMetaRef}>
                   <h2 className="text-xl font-extrabold text-white truncate">
                     {currentTrack.title}
                   </h2>
@@ -876,42 +1119,10 @@ export const PlayerBar: React.FC = () => {
             </div>
 
             {/* Interactive Mobile Seek Slider */}
-            <div>
-              <div
-                ref={mobileSeekBarRef}
-                data-no-tab-swipe="true"
-                onPointerDown={(e) =>
-                  handleSeekPointerDown(e, mobileSeekBarRef.current)
-                }
-                onPointerMove={(e) =>
-                  handleSeekPointerMove(e, mobileSeekBarRef.current)
-                }
-                onPointerUp={(e) =>
-                  handleSeekPointerUp(e, mobileSeekBarRef.current)
-                }
-                role="slider"
-                aria-label="Seek audio position"
-                aria-valuemin={0}
-                aria-valuemax={Math.round(effectiveDuration)}
-                aria-valuenow={Math.round(displayedTime)}
-                className="relative w-full h-8 flex items-center cursor-pointer touch-none"
-              >
-                <div className="w-full h-1.5 rounded-full bg-white/20 overflow-hidden">
-                  <div
-                    className="h-full rounded-full bg-[#FF5E4D]"
-                    style={{ width: `${progressPct}%` }}
-                  />
-                </div>
-                <div
-                  className="absolute w-4 h-4 rounded-full bg-[#FF5E4D] shadow-lg pointer-events-none -translate-x-1/2"
-                  style={{ left: `${progressPct}%` }}
-                />
-              </div>
-              <div className="flex items-center justify-between text-xs tabular-nums text-[#B3B3B3] -mt-1">
-                <span>{formatTime(displayedTime)}</span>
-                <span>{formatTime(effectiveDuration)}</span>
-              </div>
-            </div>
+            <MobileSeekSection
+              hasTrack={Boolean(currentTrack)}
+              fallbackDuration={currentTrack.duration_seconds}
+            />
 
             {/* Transport Controls */}
             <div className="flex items-center justify-between pt-1">
@@ -1221,52 +1432,10 @@ export const PlayerBar: React.FC = () => {
           </div>
 
           {/* Interactive Seek Progress Bar */}
-          <div className="w-full flex items-center gap-2.5">
-            <span className="text-[11px] tabular-nums text-[#A7A7A7] w-10 text-right">
-              {formatTime(displayedTime)}
-            </span>
-            <div
-              ref={seekBarRef}
-              data-no-tab-swipe="true"
-              onPointerDown={(e) =>
-                handleSeekPointerDown(e, seekBarRef.current)
-              }
-              onPointerMove={(e) =>
-                handleSeekPointerMove(e, seekBarRef.current)
-              }
-              onPointerUp={(e) => handleSeekPointerUp(e, seekBarRef.current)}
-              role="slider"
-              aria-label="Seek audio position"
-              aria-valuemin={0}
-              aria-valuemax={Math.round(effectiveDuration)}
-              aria-valuenow={Math.round(displayedTime)}
-              className="group relative flex-1 h-4 flex items-center cursor-pointer touch-none"
-            >
-              <div className="w-full h-1 rounded-full bg-[#4D4D4D] overflow-hidden">
-                <div
-                  className="h-full rounded-full bg-white group-hover:bg-[#FF5E4D] transition-colors"
-                  style={{
-                    width: `${progressPct}%`,
-                    backgroundColor: isDraggingSeek ? "#FF5E4D" : undefined,
-                  }}
-                />
-              </div>
-              <div
-                className="absolute left-0 h-1 rounded-full bg-[#FF5E4D] pointer-events-none"
-                style={{ width: `${progressPct}%` }}
-              />
-              <div
-                className="absolute w-3 h-3 rounded-full bg-white shadow opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none -translate-x-1/2"
-                style={{
-                  left: `${progressPct}%`,
-                  opacity: isDraggingSeek ? 1 : undefined,
-                }}
-              />
-            </div>
-            <span className="text-[11px] tabular-nums text-[#A7A7A7] w-10">
-              {formatTime(effectiveDuration)}
-            </span>
-          </div>
+          <DesktopSeekSection
+            hasTrack={Boolean(currentTrack)}
+            fallbackDuration={currentTrack?.duration_seconds}
+          />
         </div>
 
         {/* Right: Prefetch Badge + Queue Toggle + Volume Slider */}

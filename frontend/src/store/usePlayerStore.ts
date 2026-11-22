@@ -684,13 +684,23 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   setIsBuffering: (buffering) => set({ isBuffering: buffering }),
 
   setTimeProgress: (currentTime, duration) => {
-    set((prev) => ({
+    const prev = get();
+    const nextDuration =
+      duration !== undefined && !Number.isNaN(duration) && duration > 0
+        ? duration
+        : prev.duration;
+    const isResetToZero = currentTime === 0 && prev.currentTime > 0;
+    if (
+      !isResetToZero &&
+      Math.abs(currentTime - prev.currentTime) < 0.05 &&
+      Math.abs(nextDuration - prev.duration) < 0.05
+    ) {
+      return;
+    }
+    set({
       currentTime,
-      duration:
-        duration !== undefined && !Number.isNaN(duration) && duration > 0
-          ? duration
-          : prev.duration,
-    }));
+      duration: nextDuration,
+    });
   },
 
   seekTo: (seconds) => {

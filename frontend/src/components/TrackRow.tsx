@@ -31,60 +31,63 @@ interface TrackRowProps {
   onOpenContextMenu: (menu: ContextMenuState) => void;
 }
 
-export const TrackRow: React.FC<TrackRowProps> = ({
-  track,
-  index,
-  contextQueue,
-  playlistId,
-  reorderable = false,
-  totalCount = 0,
-  onMoveUp,
-  onMoveDown,
-  onDragStart,
-  onDragOverRow,
-  onDropRow,
-  isDragOver = false,
-  onOpenContextMenu,
-}) => {
-  const currentTrack = usePlayerStore((s) => s.currentTrack);
-  const isPlaying = usePlayerStore((s) => s.isPlaying);
-  const likedIds = usePlayerStore((s) => s.likedIds);
-  const downloadedIds = usePlayerStore((s) => s.downloadedIds);
-  const downloadingIds = usePlayerStore((s) => s.downloadingIds);
-  const playlists = usePlayerStore((s) => s.playlists);
+export const TrackRow: React.FC<TrackRowProps> = React.memo(
+  ({
+    track,
+    index,
+    contextQueue,
+    playlistId,
+    reorderable = false,
+    totalCount = 0,
+    onMoveUp,
+    onMoveDown,
+    onDragStart,
+    onDragOverRow,
+    onDropRow,
+    isDragOver = false,
+    onOpenContextMenu,
+  }) => {
+    const isActive = usePlayerStore(
+      (s) => s.currentTrack?.video_id === track.video_id
+    );
+    const isActivelyPlaying = usePlayerStore(
+      (s) => s.currentTrack?.video_id === track.video_id && s.isPlaying
+    );
+    const isLiked = usePlayerStore((s) => Boolean(s.likedIds[track.video_id]));
+    const isDownloaded = usePlayerStore((s) =>
+      Boolean(s.downloadedIds[track.video_id])
+    );
+    const isDownloading = usePlayerStore((s) =>
+      Boolean(s.downloadingIds[track.video_id])
+    );
+    const playlists = usePlayerStore((s) => s.playlists);
 
-  const playTrack = usePlayerStore((s) => s.playTrack);
-  const toggleLike = usePlayerStore((s) => s.toggleLike);
-  const toggleDownload = usePlayerStore((s) => s.toggleDownload);
-  const addTrackToPlaylist = usePlayerStore((s) => s.addTrackToPlaylist);
-  const setNewPlaylistModalOpen = usePlayerStore(
-    (s) => s.setNewPlaylistModalOpen
-  );
+    const playTrack = usePlayerStore((s) => s.playTrack);
+    const toggleLike = usePlayerStore((s) => s.toggleLike);
+    const toggleDownload = usePlayerStore((s) => s.toggleDownload);
+    const addTrackToPlaylist = usePlayerStore((s) => s.addTrackToPlaylist);
+    const setNewPlaylistModalOpen = usePlayerStore(
+      (s) => s.setNewPlaylistModalOpen
+    );
 
-  const [dropdownOpen, setDropdownOpen] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement | null>(null);
+    const [dropdownOpen, setDropdownOpen] = useState(false);
+    const dropdownRef = useRef<HTMLDivElement | null>(null);
 
-  useEffect(() => {
-    if (!dropdownOpen) return;
-    const handleOutside = (e: MouseEvent) => {
-      if (
-        dropdownRef.current &&
-        !dropdownRef.current.contains(e.target as Node)
-      ) {
-        setDropdownOpen(false);
-      }
-    };
-    window.addEventListener("mousedown", handleOutside);
-    return () => window.removeEventListener("mousedown", handleOutside);
-  }, [dropdownOpen]);
+    useEffect(() => {
+      if (!dropdownOpen) return;
+      const handleOutside = (e: MouseEvent) => {
+        if (
+          dropdownRef.current &&
+          !dropdownRef.current.contains(e.target as Node)
+        ) {
+          setDropdownOpen(false);
+        }
+      };
+      window.addEventListener("mousedown", handleOutside);
+      return () => window.removeEventListener("mousedown", handleOutside);
+    }, [dropdownOpen]);
 
-  const isActive = currentTrack?.video_id === track.video_id;
-  const isActivelyPlaying = isActive && isPlaying;
-  const isLiked = Boolean(likedIds[track.video_id]);
-  const isDownloaded = Boolean(downloadedIds[track.video_id]);
-  const isDownloading = Boolean(downloadingIds[track.video_id]);
-
-  return (
+    return (
     <div
       draggable={reorderable}
       onDragStart={() => onDragStart?.(index)}
@@ -336,4 +339,6 @@ export const TrackRow: React.FC<TrackRowProps> = ({
       </div>
     </div>
   );
-};
+});
+
+TrackRow.displayName = "TrackRow";

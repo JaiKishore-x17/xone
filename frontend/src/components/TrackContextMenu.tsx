@@ -34,6 +34,7 @@ export const TrackContextMenu: React.FC<TrackContextMenuProps> = ({
   onClose,
 }) => {
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const sheetBackdropRef = useRef<HTMLDivElement | null>(null);
   const sheetRef = useRef<HTMLDivElement | null>(null);
   const sheetTouchRef = useRef<{
     startY: number;
@@ -42,11 +43,12 @@ export const TrackContextMenu: React.FC<TrackContextMenuProps> = ({
     dragging: boolean;
   } | null>(null);
   const dismissTimerRef = useRef<number | null>(null);
+  const sheetRafRef = useRef<number | null>(null);
+  const pendingSheetDragYRef = useRef<number | null>(null);
+  const sheetDragYRef = useRef(0);
   const [showPlaylistsSub, setShowPlaylistsSub] = useState(false);
   const [mobilePlaylistsOpen, setMobilePlaylistsOpen] = useState(false);
   const [sheetEntered, setSheetEntered] = useState(false);
-  const [sheetDragY, setSheetDragY] = useState(0);
-  const [sheetTransition, setSheetTransition] = useState("none");
 
   const playlists = usePlayerStore((s) => s.playlists);
   const likedIds = usePlayerStore((s) => s.likedIds);
@@ -69,8 +71,8 @@ export const TrackContextMenu: React.FC<TrackContextMenuProps> = ({
   useEffect(() => {
     setShowPlaylistsSub(false);
     setMobilePlaylistsOpen(false);
-    setSheetDragY(0);
-    setSheetTransition("none");
+    sheetDragYRef.current = 0;
+    pendingSheetDragYRef.current = null;
   }, [menu]);
 
   useLayoutEffect(() => {
@@ -79,6 +81,19 @@ export const TrackContextMenu: React.FC<TrackContextMenuProps> = ({
       return;
     }
     setSheetEntered(false);
+    sheetDragYRef.current = 0;
+    pendingSheetDragYRef.current = null;
+    if (sheetRef.current) {
+      sheetRef.current.scrollTo({ top: 0, behavior: "instant" });
+      sheetRef.current.style.transition =
+        "transform 240ms cubic-bezier(0.22, 1, 0.36, 1)";
+      sheetRef.current.style.transform = "";
+    }
+    if (sheetBackdropRef.current) {
+      sheetBackdropRef.current.style.transition =
+        "background-color 200ms ease-out";
+      sheetBackdropRef.current.style.backgroundColor = "";
+    }
     let cancelled = false;
     let raf2 = 0;
     const raf1 = window.requestAnimationFrame(() => {
@@ -99,6 +114,9 @@ export const TrackContextMenu: React.FC<TrackContextMenuProps> = ({
     return () => {
       if (dismissTimerRef.current !== null) {
         window.clearTimeout(dismissTimerRef.current);
+      }
+      if (sheetRafRef.current !== null) {
+        window.cancelAnimationFrame(sheetRafRef.current);
       }
     };
   }, []);
@@ -141,12 +159,34 @@ export const TrackContextMenu: React.FC<TrackContextMenuProps> = ({
   const left = Math.min(Math.max(8, menu.x), viewportWidth - 235);
   const top = Math.min(Math.max(8, menu.y), viewportHeight - 250);
 
+  const cancelSheetRaf = () => {
+    if (sheetRafRef.current !== null) {
+      window.cancelAnimationFrame(sheetRafRef.current);
+      sheetRafRef.current = null;
+    }
+    pendingSheetDragYRef.current = null;
+  };
+
+  const applySheetDragVisuals = (dy: number) => {
+    sheetDragYRef.current = dy;
+    if (sheetRef.current) {
+      sheetRef.current.style.transition = "none";
+      sheetRef.current.style.transform = `translate3d(0, ${dy}px, 0)`;
+    }
+    if (sheetBackdropRef.current) {
+      const alpha = dy > 0 ? Math.max(0.15, 0.75 * (1 - dy / 420)) : 0.75;
+      sheetBackdropRef.current.style.transition = "none";
+      sheetBackdropRef.current.style.backgroundColor = `rgba(0, 0, 0, ${alpha})`;
+    }
+  };
+
   const handleSheetTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
     if (e.touches.length !== 1) return;
     if (dismissTimerRef.current !== null) {
       window.clearTimeout(dismissTimerRef.current);
       dismissTimerRef.current = null;
     }
+    cancelSheetRaf();
     const sheet = sheetRef.current;
     const target = e.target as HTMLElement | null;
     const onHandleOrHeader = Boolean(target?.closest("[data-sheet-handle]"));
@@ -165,45 +205,78 @@ export const TrackContextMenu: React.FC<TrackContextMenuProps> = ({
     const dy = e.touches[0].clientY - drag.startY;
     if (dy > 4) {
       drag.dragging = true;
-      setSheetTransition("none");
-      setSheetDragY(dy);
+      pendingSheetDragYRef.current = dy;
+      if (sheetRafRef.current === null) {
+        sheetRafRef.current = window.requestAnimationFrame(() => {
+          sheetRafRef.current = null;
+          if (pendingSheetDragYRef.current !== null) {
+            const targetY = pendingSheetDragYRef.current;
+            pendingSheetDragYRef.current = null;
+            applySheetDragVisuals(targetY);
+          }
+        });
+      }
     }
   };
 
   const handleSheetTouchEnd = (e: React.TouchEvent<HTMLDivElement>) => {
     const drag = sheetTouchRef.current;
     sheetTouchRef.current = null;
+    cancelSheetRaf();
     if (!drag || !drag.dragging) return;
 
     const dy =
       e.changedTouches.length > 0
         ? e.changedTouches[0].clientY - drag.startY
-        : sheetDragY;
+        : sheetDragYRef.current;
     const elapsed = Math.max(1, Date.now() - drag.startTime);
     const velocity = dy / elapsed;
 
     if (dy > 80 || (dy > 40 && velocity > 0.65)) {
       const exitY = typeof window !== "undefined" ? window.innerHeight : 700;
-      setSheetTransition("transform 180ms ease-in");
-      setSheetDragY(exitY);
+      if (sheetRef.current) {
+        sheetRef.current.style.transition = "transform 180ms ease-in";
+        sheetRef.current.style.transform = `translate3d(0, ${exitY}px, 0)`;
+      }
+      if (sheetBackdropRef.current) {
+        sheetBackdropRef.current.style.transition =
+          "background-color 180ms ease-in";
+        sheetBackdropRef.current.style.backgroundColor = "rgba(0, 0, 0, 0)";
+      }
       dismissTimerRef.current = window.setTimeout(() => {
         dismissTimerRef.current = null;
         onClose();
       }, 180);
     } else {
-      setSheetTransition("transform 220ms cubic-bezier(0.22, 1, 0.36, 1)");
-      setSheetDragY(0);
+      sheetDragYRef.current = 0;
+      if (sheetRef.current) {
+        sheetRef.current.style.transition =
+          "transform 220ms cubic-bezier(0.22, 1, 0.36, 1)";
+        sheetRef.current.style.transform = "translate3d(0, 0, 0)";
+      }
+      if (sheetBackdropRef.current) {
+        sheetBackdropRef.current.style.transition =
+          "background-color 220ms ease-out";
+        sheetBackdropRef.current.style.backgroundColor = "rgba(0, 0, 0, 0.75)";
+      }
     }
   };
 
   const handleSheetTouchCancel = () => {
     sheetTouchRef.current = null;
-    setSheetTransition("transform 220ms cubic-bezier(0.22, 1, 0.36, 1)");
-    setSheetDragY(0);
+    cancelSheetRaf();
+    sheetDragYRef.current = 0;
+    if (sheetRef.current) {
+      sheetRef.current.style.transition =
+        "transform 220ms cubic-bezier(0.22, 1, 0.36, 1)";
+      sheetRef.current.style.transform = "translate3d(0, 0, 0)";
+    }
+    if (sheetBackdropRef.current) {
+      sheetBackdropRef.current.style.transition =
+        "background-color 220ms ease-out";
+      sheetBackdropRef.current.style.backgroundColor = "rgba(0, 0, 0, 0.75)";
+    }
   };
-
-  const backdropAlpha =
-    sheetDragY > 0 ? Math.max(0.15, 0.75 * (1 - sheetDragY / 420)) : 0.75;
 
   const content = (
     <>
@@ -366,14 +439,15 @@ export const TrackContextMenu: React.FC<TrackContextMenuProps> = ({
 
       {/* ===================== MOBILE BOTTOM ACTION SHEET (< 768px) ===================== */}
       <div
+        ref={sheetBackdropRef}
         data-no-tab-swipe="true"
         role="dialog"
         aria-modal="true"
         onClick={onClose}
         style={{
-          backgroundColor: `rgba(0, 0, 0, ${sheetEntered ? backdropAlpha : 0})`,
+          backgroundColor: `rgba(0, 0, 0, ${sheetEntered ? 0.75 : 0})`,
         }}
-        className="md:hidden fixed inset-0 z-[110] backdrop-blur-sm flex items-end justify-center select-none transition-colors duration-200 ease-out"
+        className="md:hidden fixed inset-0 z-[110] flex items-end justify-center select-none transition-colors duration-200 ease-out"
       >
         <div
           ref={sheetRef}
@@ -383,18 +457,12 @@ export const TrackContextMenu: React.FC<TrackContextMenuProps> = ({
           onTouchEnd={handleSheetTouchEnd}
           onTouchCancel={handleSheetTouchCancel}
           style={{
-            transform:
-              sheetDragY > 0
-                ? `translateY(${sheetDragY}px)`
-                : sheetEntered
-                  ? "translateY(0)"
-                  : "translateY(100%)",
-            transition:
-              sheetDragY > 0 || sheetTransition !== "none"
-                ? sheetTransition
-                : "transform 240ms cubic-bezier(0.22, 1, 0.36, 1)",
+            transform: sheetEntered
+              ? "translate3d(0, 0, 0)"
+              : "translate3d(0, 100%, 0)",
+            transition: "transform 240ms cubic-bezier(0.22, 1, 0.36, 1)",
           }}
-          className="w-full max-h-[80vh] overflow-y-auto rounded-t-2xl bg-[#141414] border-t border-white/10 px-4 pt-3 pb-[calc(env(safe-area-inset-bottom)+3rem)] shadow-2xl touch-pan-y"
+          className="w-full max-h-[80vh] overflow-y-auto xone-modal-scroll overscroll-y-contain rounded-t-2xl bg-[#141414] border-t border-white/10 px-4 pt-3 pb-[calc(env(safe-area-inset-bottom)+3rem)] shadow-2xl touch-pan-y"
         >
           {/* Sheet Drag Handle */}
           <div data-sheet-handle="true" className="py-1 -mt-1 mb-2 cursor-grab">

@@ -51,12 +51,14 @@ export const JamModal: React.FC = () => {
     canDragDown: boolean;
     lockedAxis: "x" | "y" | null;
   } | null>(null);
+  const jamBackdropRef = useRef<HTMLDivElement | null>(null);
   const jamCardRef = useRef<HTMLDivElement | null>(null);
   const jamDismissTimerRef = useRef<number | null>(null);
+  const jamRafRef = useRef<number | null>(null);
+  const pendingJamDragYRef = useRef<number | null>(null);
+  const jamDragYRef = useRef(0);
 
   const [jamEntered, setJamEntered] = useState(false);
-  const [jamDragY, setJamDragY] = useState(0);
-  const [jamTransition, setJamTransition] = useState("none");
 
   const [activeTab, setActiveTab] = useState<"host" | "join">("host");
   const [deviceNameInput, setDeviceNameInput] = useState("");
@@ -103,8 +105,8 @@ export const JamModal: React.FC = () => {
   useEffect(() => {
     if (!isOpen) {
       setErrorMsg(null);
-      setJamDragY(0);
-      setJamTransition("none");
+      jamDragYRef.current = 0;
+      pendingJamDragYRef.current = null;
       return;
     }
     const onEsc = (e: KeyboardEvent) => {
@@ -120,8 +122,18 @@ export const JamModal: React.FC = () => {
       return;
     }
     setJamEntered(false);
-    setJamDragY(0);
-    setJamTransition("none");
+    jamDragYRef.current = 0;
+    pendingJamDragYRef.current = null;
+    if (jamCardRef.current) {
+      jamCardRef.current.scrollTo({ top: 0, behavior: "instant" });
+      jamCardRef.current.style.transition =
+        "transform 250ms ease-out, opacity 250ms ease-out";
+      jamCardRef.current.style.transform = "";
+    }
+    if (jamBackdropRef.current) {
+      jamBackdropRef.current.style.transition = "background-color 250ms ease-out";
+      jamBackdropRef.current.style.backgroundColor = "";
+    }
     let cancelled = false;
     let raf2 = 0;
     const raf1 = window.requestAnimationFrame(() => {
@@ -137,6 +149,17 @@ export const JamModal: React.FC = () => {
       if (raf2) window.cancelAnimationFrame(raf2);
     };
   }, [isOpen]);
+
+  useEffect(() => {
+    return () => {
+      if (jamDismissTimerRef.current !== null) {
+        window.clearTimeout(jamDismissTimerRef.current);
+      }
+      if (jamRafRef.current !== null) {
+        window.cancelAnimationFrame(jamRafRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -401,6 +424,27 @@ export const JamModal: React.FC = () => {
     </div>
   );
 
+  const cancelJamRaf = () => {
+    if (jamRafRef.current !== null) {
+      window.cancelAnimationFrame(jamRafRef.current);
+      jamRafRef.current = null;
+    }
+    pendingJamDragYRef.current = null;
+  };
+
+  const applyJamDragVisuals = (dy: number) => {
+    jamDragYRef.current = dy;
+    if (jamCardRef.current) {
+      jamCardRef.current.style.transition = "none";
+      jamCardRef.current.style.transform = `translate3d(0, ${dy}px, 0)`;
+    }
+    if (jamBackdropRef.current) {
+      const alpha = dy > 0 ? Math.max(0.15, 0.8 * (1 - dy / 440)) : 0.8;
+      jamBackdropRef.current.style.transition = "none";
+      jamBackdropRef.current.style.backgroundColor = `rgba(0, 0, 0, ${alpha})`;
+    }
+  };
+
   const handleJamTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
     if (e.touches.length !== 1) {
       jamTouchRef.current = null;
@@ -410,6 +454,7 @@ export const JamModal: React.FC = () => {
       window.clearTimeout(jamDismissTimerRef.current);
       jamDismissTimerRef.current = null;
     }
+    cancelJamRaf();
     const target = e.target as HTMLElement | null;
     if (
       target?.closest('input, textarea, button[role="switch"], [role="slider"]')
@@ -445,14 +490,24 @@ export const JamModal: React.FC = () => {
     }
 
     if (drag.lockedAxis === "y" && drag.canDragDown && dy > 0) {
-      setJamTransition("none");
-      setJamDragY(dy);
+      pendingJamDragYRef.current = dy;
+      if (jamRafRef.current === null) {
+        jamRafRef.current = window.requestAnimationFrame(() => {
+          jamRafRef.current = null;
+          if (pendingJamDragYRef.current !== null) {
+            const targetY = pendingJamDragYRef.current;
+            pendingJamDragYRef.current = null;
+            applyJamDragVisuals(targetY);
+          }
+        });
+      }
     }
   };
 
   const handleJamTouchEnd = (e: React.TouchEvent<HTMLDivElement>) => {
     const drag = jamTouchRef.current;
     jamTouchRef.current = null;
+    cancelJamRaf();
     if (!drag || e.changedTouches.length === 0) return;
 
     const deltaY = e.changedTouches[0].clientY - drag.startY;
@@ -462,36 +517,60 @@ export const JamModal: React.FC = () => {
       const velocity = deltaY / elapsed;
       if (deltaY > 90 || (deltaY > 45 && velocity > 0.65)) {
         const exitY = typeof window !== "undefined" ? window.innerHeight : 720;
-        setJamTransition("transform 180ms ease-in");
-        setJamDragY(exitY);
+        if (jamCardRef.current) {
+          jamCardRef.current.style.transition = "transform 180ms ease-in";
+          jamCardRef.current.style.transform = `translate3d(0, ${exitY}px, 0)`;
+        }
+        if (jamBackdropRef.current) {
+          jamBackdropRef.current.style.transition =
+            "background-color 180ms ease-in";
+          jamBackdropRef.current.style.backgroundColor = "rgba(0, 0, 0, 0)";
+        }
         jamDismissTimerRef.current = window.setTimeout(() => {
           jamDismissTimerRef.current = null;
           setJamModalOpen(false);
         }, 180);
       } else {
-        setJamTransition("transform 220ms cubic-bezier(0.22, 1, 0.36, 1)");
-        setJamDragY(0);
+        jamDragYRef.current = 0;
+        if (jamCardRef.current) {
+          jamCardRef.current.style.transition =
+            "transform 220ms cubic-bezier(0.22, 1, 0.36, 1)";
+          jamCardRef.current.style.transform = "translate3d(0, 0, 0)";
+        }
+        if (jamBackdropRef.current) {
+          jamBackdropRef.current.style.transition =
+            "background-color 220ms ease-out";
+          jamBackdropRef.current.style.backgroundColor = "rgba(0, 0, 0, 0.8)";
+        }
       }
     }
   };
 
   const handleJamTouchCancel = () => {
     jamTouchRef.current = null;
-    setJamTransition("transform 220ms cubic-bezier(0.22, 1, 0.36, 1)");
-    setJamDragY(0);
+    cancelJamRaf();
+    jamDragYRef.current = 0;
+    if (jamCardRef.current) {
+      jamCardRef.current.style.transition =
+        "transform 220ms cubic-bezier(0.22, 1, 0.36, 1)";
+      jamCardRef.current.style.transform = "translate3d(0, 0, 0)";
+    }
+    if (jamBackdropRef.current) {
+      jamBackdropRef.current.style.transition =
+        "background-color 220ms ease-out";
+      jamBackdropRef.current.style.backgroundColor = "rgba(0, 0, 0, 0.8)";
+    }
   };
-
-  const jamBackdropAlpha =
-    jamDragY > 0 ? Math.max(0.15, 0.8 * (1 - jamDragY / 440)) : 0.8;
 
   return (
     <div
+      ref={jamBackdropRef}
       data-no-tab-swipe="true"
       onClick={() => setJamModalOpen(false)}
       style={{
-        backgroundColor: `rgba(0, 0, 0, ${jamEntered ? jamBackdropAlpha : 0})`,
+        backgroundColor: `rgba(0, 0, 0, ${jamEntered ? 0.8 : 0})`,
       }}
-      className="fixed inset-0 z-50 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 select-none transition-all duration-[250ms] ease-out"
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 select-none transition-colors duration-[250ms] ease-out"
     >
       <div
         ref={jamCardRef}
@@ -501,19 +580,13 @@ export const JamModal: React.FC = () => {
         onTouchEnd={handleJamTouchEnd}
         onTouchCancel={handleJamTouchCancel}
         style={{
-          transform:
-            jamDragY > 0
-              ? `translateY(${jamDragY}px)`
-              : jamEntered
-                ? "translateY(0)"
-                : "translateY(32px)",
+          transform: jamEntered
+            ? "translate3d(0, 0, 0)"
+            : "translate3d(0, 32px, 0)",
           opacity: jamEntered ? 1 : 0,
-          transition:
-            jamDragY > 0 || jamTransition !== "none"
-              ? jamTransition
-              : "transform 250ms ease-out, opacity 250ms ease-out",
+          transition: "transform 250ms ease-out, opacity 250ms ease-out",
         }}
-        className="w-full sm:max-w-lg max-h-[90vh] overflow-y-auto rounded-t-2xl sm:rounded-2xl bg-[#141414] border-t sm:border border-white/10 shadow-2xl p-5 pb-[calc(1.5rem+env(safe-area-inset-bottom))] sm:p-6 touch-pan-y"
+        className="w-full sm:max-w-lg max-h-[90vh] overflow-y-auto xone-modal-scroll overscroll-y-contain rounded-t-2xl sm:rounded-2xl bg-[#141414] border-t sm:border border-white/10 shadow-2xl p-5 pb-[calc(1.5rem+env(safe-area-inset-bottom))] sm:p-6 touch-pan-y"
       >
         {/* Mobile Drag Handle Pill */}
         <div

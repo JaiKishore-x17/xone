@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   Clock3,
   Download,
@@ -71,6 +71,33 @@ export const MainView: React.FC = () => {
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [collectionMenuOpen, setCollectionMenuOpen] = useState(false);
   const collectionMenuRef = useRef<HTMLDivElement | null>(null);
+  const mainScrollRef = useRef<HTMLDivElement | null>(null);
+
+  const activeViewKey =
+    activeView.type === "playlist"
+      ? `playlist:${activeView.playlistId}`
+      : activeView.type;
+
+  useLayoutEffect(() => {
+    mainScrollRef.current?.scrollTo({ top: 0, behavior: "instant" });
+  }, [activeViewKey, activePlaylist?.id]);
+
+  useLayoutEffect(() => {
+    if (activeView.type === "search") {
+      mainScrollRef.current?.scrollTo({ top: 0, behavior: "instant" });
+    }
+  }, [searchQuery, activeView.type]);
+
+  const handleCloseContextMenu = useCallback(() => {
+    setContextMenu(null);
+  }, []);
+
+  const handleRemoveFromQueueAt = useCallback(
+    (index: number) => {
+      removeFromQueue(index);
+    },
+    [removeFromQueue]
+  );
 
   useEffect(() => {
     setCollectionMenuOpen(false);
@@ -122,7 +149,10 @@ export const MainView: React.FC = () => {
   // ===================== HOME VIEW =====================
   if (activeView.type === "home") {
     return (
-      <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 md:px-6 pb-[calc(8rem+env(safe-area-inset-bottom))] md:pb-24 pt-4 md:pt-5 bg-gradient-to-b from-[#FF5E4D]/15 via-[#000000] to-[#000000]">
+      <div
+        ref={mainScrollRef}
+        className="flex-1 overflow-y-auto overflow-x-hidden xone-scroll-y px-4 md:px-6 pb-[calc(8rem+env(safe-area-inset-bottom))] md:pb-24 pt-4 md:pt-5 bg-gradient-to-b from-[#FF5E4D]/15 via-[#000000] to-[#000000]"
+      >
         {/* Dynamic Greeting + 6 Quick-Access Horizontal Cards */}
         <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white mb-4">
           {getTimeGreeting()}
@@ -249,7 +279,7 @@ export const MainView: React.FC = () => {
 
         <TrackContextMenu
           menu={contextMenu}
-          onClose={() => setContextMenu(null)}
+          onClose={handleCloseContextMenu}
         />
       </div>
     );
@@ -258,7 +288,10 @@ export const MainView: React.FC = () => {
   // ===================== LIBRARY VIEW (MOBILE / UNIVERSAL) =====================
   if (activeView.type === "library") {
     return (
-      <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 md:px-6 pb-[calc(8rem+env(safe-area-inset-bottom))] md:pb-24 pt-5 bg-[#000000]">
+      <div
+        ref={mainScrollRef}
+        className="flex-1 overflow-y-auto overflow-x-hidden xone-scroll-y px-4 md:px-6 pb-[calc(8rem+env(safe-area-inset-bottom))] md:pb-24 pt-5 bg-[#000000]"
+      >
         <div className="flex items-center justify-between gap-3 mb-5">
           <h1 className="text-2xl font-extrabold tracking-tight text-white">
             Your Library
@@ -455,7 +488,7 @@ export const MainView: React.FC = () => {
 
         <TrackContextMenu
           menu={contextMenu}
-          onClose={() => setContextMenu(null)}
+          onClose={handleCloseContextMenu}
         />
       </div>
     );
@@ -470,7 +503,10 @@ export const MainView: React.FC = () => {
     const isTopPlaying = isTopActive && isPlaying;
 
     return (
-      <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 md:px-6 pb-[calc(8rem+env(safe-area-inset-bottom))] md:pb-24 pt-5 bg-[#000000]">
+      <div
+        ref={mainScrollRef}
+        className="flex-1 overflow-y-auto overflow-x-hidden xone-scroll-y px-4 md:px-6 pb-[calc(8rem+env(safe-area-inset-bottom))] md:pb-24 pt-5 bg-[#000000]"
+      >
         {!searchQuery.trim() ? (
           recentSearches.length > 0 ? (
             <div className="space-y-6">
@@ -733,7 +769,7 @@ export const MainView: React.FC = () => {
 
         <TrackContextMenu
           menu={contextMenu}
-          onClose={() => setContextMenu(null)}
+          onClose={handleCloseContextMenu}
         />
       </div>
     );
@@ -772,7 +808,8 @@ export const MainView: React.FC = () => {
 
     return (
       <div
-        className="flex-1 overflow-y-auto overflow-x-hidden pb-[calc(8rem+env(safe-area-inset-bottom))] md:pb-24"
+        ref={mainScrollRef}
+        className="flex-1 overflow-y-auto overflow-x-hidden xone-scroll-y pb-[calc(8rem+env(safe-area-inset-bottom))] md:pb-24"
         style={{
           background:
             "linear-gradient(180deg, rgba(255,94,77,0.45) 0%, rgba(110,20,16,0.35) 210px, #000000 360px, #000000 100%)",
@@ -931,7 +968,7 @@ export const MainView: React.FC = () => {
 
         <TrackContextMenu
           menu={contextMenu}
-          onClose={() => setContextMenu(null)}
+          onClose={handleCloseContextMenu}
         />
       </div>
     );
@@ -963,7 +1000,8 @@ export const MainView: React.FC = () => {
 
     return (
       <div
-        className="flex-1 overflow-y-auto overflow-x-hidden pb-[calc(8rem+env(safe-area-inset-bottom))] md:pb-24"
+        ref={mainScrollRef}
+        className="flex-1 overflow-y-auto overflow-x-hidden xone-scroll-y pb-[calc(8rem+env(safe-area-inset-bottom))] md:pb-24"
         style={{
           background: `linear-gradient(180deg, ${accent}66 0%, ${accent}22 210px, #000000 360px, #000000 100%)`,
         }}
@@ -1189,7 +1227,7 @@ export const MainView: React.FC = () => {
 
         <TrackContextMenu
           menu={contextMenu}
-          onClose={() => setContextMenu(null)}
+          onClose={handleCloseContextMenu}
         />
       </div>
     );
@@ -1207,7 +1245,10 @@ export const MainView: React.FC = () => {
       : queue;
 
   return (
-    <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 md:px-6 pb-[calc(8rem+env(safe-area-inset-bottom))] md:pb-24 pt-6 bg-[#000000]">
+    <div
+      ref={mainScrollRef}
+      className="flex-1 overflow-y-auto overflow-x-hidden xone-modal-scroll overscroll-y-contain px-4 md:px-6 pb-[calc(8rem+env(safe-area-inset-bottom))] md:pb-24 pt-6 bg-[#000000]"
+    >
       <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-extrabold text-white">
@@ -1324,7 +1365,8 @@ export const MainView: React.FC = () => {
                   track={track}
                   mode="queue"
                   canRemove={!jamState.active}
-                  onRemoveFromQueue={() => removeFromQueue(absoluteIdx)}
+                  removeIndex={absoluteIdx}
+                  onRemoveAt={handleRemoveFromQueueAt}
                 >
                   <div className="group flex items-center gap-3 px-2 md:px-3 py-2 rounded-md hover:bg-[#1E1E1E] transition-colors">
                     <span className="hidden md:inline-block w-6 text-center text-xs tabular-nums text-[#B3B3B3]">

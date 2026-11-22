@@ -71,3 +71,34 @@
 .eq-bar-3 {
   animation: xone-eq-3 0.95s ease-in-out infinite;
 }
+
+@layer utilities {
+  .xone-scroll-y,
+  .overflow-y-auto {
+    scroll-behavior: smooth;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .xone-scroll-x,
+  .overflow-x-auto {
+    scroll-behavior: smooth;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .xone-scroll-x,
+  .overflow-x-auto:not(.overflow-y-auto) {
+    touch-action: pan-x;
+  }
+
+  .xone-modal-scroll {
+    overscroll-behavior-y: contain;
+    scroll-behavior: smooth;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .xone-track-row {
+    content-visibility: auto;
+    contain-intrinsic-size: 64px;
+    touch-action: pan-y;
+  }
+}
