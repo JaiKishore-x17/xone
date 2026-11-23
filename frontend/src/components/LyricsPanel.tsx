@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Mic2, Music2 } from "lucide-react";
+import { Mic2, Music2, RefreshCw } from "lucide-react";
 import {
   getLyricsForTrack,
   type LyricLine,
@@ -108,13 +108,20 @@ export const LyricsPanel: React.FC<LyricsPanelProps> = React.memo(
     const trackKey = track.id || track.video_id;
     const [loading, setLoading] = useState(true);
     const [lyrics, setLyrics] = useState<LyricsResult | null>(null);
+    const [retryRequest, setRetryRequest] = useState<{
+      trackKey: string;
+      nonce: number;
+    }>({ trackKey, nonce: 0 });
+
+    const forceRefresh =
+      retryRequest.trackKey === trackKey && retryRequest.nonce > 0;
 
     useEffect(() => {
       let cancelled = false;
       setLoading(true);
       setLyrics(null);
 
-      void getLyricsForTrack(track, durationSeconds)
+      void getLyricsForTrack(track, durationSeconds, forceRefresh)
         .then((res) => {
           if (!cancelled) {
             setLyrics(res);
@@ -139,7 +146,21 @@ export const LyricsPanel: React.FC<LyricsPanelProps> = React.memo(
       return () => {
         cancelled = true;
       };
-    }, [trackKey, track.title, track.artist, durationSeconds]);
+    }, [
+      trackKey,
+      track.title,
+      track.artist,
+      durationSeconds,
+      forceRefresh,
+      retryRequest.nonce,
+    ]);
+
+    const handleRetry = () => {
+      setRetryRequest((prev) => ({
+        trackKey,
+        nonce: prev.trackKey === trackKey ? prev.nonce + 1 : 1,
+      }));
+    };
 
     return (
       <div
@@ -197,6 +218,14 @@ export const LyricsPanel: React.FC<LyricsPanelProps> = React.memo(
             <p className="text-xs text-[#727272] max-w-[240px]">
               Checked LRCLIB for &ldquo;{track.title}&rdquo;.
             </p>
+            <button
+              type="button"
+              onClick={handleRetry}
+              className="mt-1 min-h-[36px] px-4 py-1.5 rounded-full bg-[#1E1E1E] hover:bg-[#282828] active:scale-95 border border-white/10 hover:border-[#FF5E4D]/60 text-xs font-semibold text-white inline-flex items-center gap-1.5 transition-all"
+            >
+              <RefreshCw size={13} className="text-[#FF5E4D]" />
+              <span>Retry</span>
+            </button>
           </div>
         )}
       </div>

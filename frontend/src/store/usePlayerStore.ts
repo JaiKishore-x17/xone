@@ -71,8 +71,38 @@ function persistRecentSearches(tracks: Track[]): void {
   }
 }
 
+function createQueueItemId(track: Track): string {
+  const baseId = track.id || track.video_id;
+  return `${baseId}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
+function toQueuedTrack(track: Track): Track {
+  return {
+    ...track,
+    queueItemId: createQueueItemId(track),
+  };
+}
+
+function ensureQueueItemId(track: Track): Track {
+  return track.queueItemId ? track : toQueuedTrack(track);
+}
+
+function matchesQueuedTrack(candidate: Track, target: Track): boolean {
+  if (candidate.queueItemId && target.queueItemId) {
+    return candidate.queueItemId === target.queueItemId;
+  }
+  return candidate.video_id === target.video_id;
+}
+
 function shuffleKeepingFirst(tracks: Track[], firstTrack: Track): Track[] {
-  const rest = tracks.filter((t) => t.video_id !== firstTrack.video_id);
+  let removedFirst = false;
+  const rest = tracks.filter((t) => {
+    if (!removedFirst && matchesQueuedTrack(t, firstTrack)) {
+      removedFirst = true;
+      return false;
+    }
+    return true;
+  });
   for (let i = rest.length - 1; i > 0; i -= 1) {
     const j = Math.floor(Math.random() * (i + 1));
     const tmp = rest[i];
@@ -123,6 +153,7 @@ interface PlayerState {
   recentSearches: Track[];
   isSearching: boolean;
   searchError: string | null;
+  searchErrorKind: "offline" | "generic" | null;
 
   // Library
   playlists: Playlist[];
@@ -135,6 +166,7 @@ interface PlayerState {
 
   // Modal / UI Feedback
   isNewPlaylistModalOpen: boolean;
+  addToPlaylistModalTrack: Track | null;
   isJamModalOpen: boolean;
   isMobilePlayerExpanded: boolean;
   isKeyboardOpen: boolean;
@@ -154,7 +186,7 @@ interface PlayerState {
   playNextInQueue: (track: Track) => void;
   addToQueue: (track: Track) => void;
   addTracksToQueue: (tracks: Track[]) => Promise<void>;
-  removeFromQueue: (index: number) => void;
+  removeFromQueue: (index: number, queueItemId?: string) => void;
   clearUpcomingQueue: () => void;
   toggleShuffle: () => void;
   cycleRepeat: () => void;
@@ -189,6 +221,7 @@ interface PlayerState {
   toggleDownload: (track: Track) => Promise<void>;
   openDownloadsFolder: () => Promise<void>;
   createPlaylist: (name: string, description: string, coverColor: string) => Promise<Playlist>;
+  createPlaylistAndAddTrack: (name: string, track: Track, coverColor?: string) => Promise<Playlist>;
   deletePlaylist: (playlistId: number) => Promise<void>;
   addTrackToPlaylist: (playlistId: number, track: Track) => Promise<void>;
   removeTrackFromPlaylist: (playlistId: number, videoId: string) => Promise<void>;
@@ -196,6 +229,8 @@ interface PlayerState {
 
   // UI Helpers
   setNewPlaylistModalOpen: (open: boolean) => void;
+  openAddToPlaylistModal: (track: Track) => void;
+  closeAddToPlaylistModal: () => void;
   setJamModalOpen: (open: boolean) => void;
   setMobilePlayerExpanded: (open: boolean) => void;
   setKeyboardOpen: (open: boolean) => void;
@@ -243,6 +278,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   recentSearches: readInitialRecentSearches(),
   isSearching: false,
   searchError: null,
+  searchErrorKind: null,
 
   playlists: [],
   activePlaylist: null,
@@ -253,6 +289,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   downloadingIds: {},
 
   isNewPlaylistModalOpen: false,
+  addToPlaylistModalTrack: null,
   isJamModalOpen: false,
   isMobilePlayerExpanded: false,
   isKeyboardOpen: false,
@@ -271,6 +308,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   setNewPlaylistModalOpen: (open) => set({ isNewPlaylistModalOpen: open }),
+  openAddToPlaylistModal: (track) => set({ addToPlaylistModalTrack: track }),
+  closeAddToPlaylistModal: () => set({ addToPlaylistModalTrack: null }),
   setJamModalOpen: (open) => set({ isJamModalOpen: open }),
   setMobilePlayerExpanded: (open) => set({ isMobilePlayerExpanded: open }),
   setKeyboardOpen: (open) => set({ isKeyboardOpen: open }),
@@ -494,11 +533,13 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         : latest.queue;
 
       const existingIds = new Set(keptPrefix.map((t) => t.video_id));
-      const freshTracks = tracks.filter((t) => {
-        if (existingIds.has(t.video_id)) return false;
-        existingIds.add(t.video_id);
-        return true;
-      });
+      const freshTracks = tracks
+        .filter((t) => {
+          if (existingIds.has(t.video_id)) return false;
+          existingIds.add(t.video_id);
+          return true;
+        })
+        .map(toQueuedTrack);
 
       if (replaceUpcoming) {
         set({
@@ -572,19 +613,41 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     let nextOriginalQueue = state.originalQueue;
     let nextQueue = state.queue;
     let nextIndex = state.queueIndex;
+    let activeQueuedTrack = ensureQueueItemId(track);
     let shouldFetchRadioReplace = false;
     let shouldFetchRadioExtend = false;
 
     if (contextQueue && contextQueue.length > 0) {
-      const hasTrack = contextQueue.some((t) => t.video_id === track.video_id);
-      const baseList = hasTrack ? contextQueue : [track, ...contextQueue];
-      nextOriginalQueue = baseList;
-      if (state.shuffle) {
-        nextQueue = shuffleKeepingFirst(baseList, track);
+      const isPlayingFromCurrentQueue = contextQueue === state.queue;
+      const preparedList = isPlayingFromCurrentQueue
+        ? contextQueue.map(ensureQueueItemId)
+        : contextQueue.map(toQueuedTrack);
+
+      const foundIdx = preparedList.findIndex((t) =>
+        isPlayingFromCurrentQueue
+          ? matchesQueuedTrack(t, track)
+          : t.video_id === track.video_id
+      );
+
+      let baseList: Track[];
+      if (foundIdx >= 0) {
+        baseList = preparedList;
+        activeQueuedTrack = preparedList[foundIdx];
+      } else {
+        activeQueuedTrack = toQueuedTrack(track);
+        baseList = [activeQueuedTrack, ...preparedList];
+      }
+
+      nextOriginalQueue = isPlayingFromCurrentQueue
+        ? state.originalQueue
+        : baseList;
+
+      if (state.shuffle && !isPlayingFromCurrentQueue) {
+        nextQueue = shuffleKeepingFirst(baseList, activeQueuedTrack);
         nextIndex = 0;
       } else {
         nextQueue = baseList;
-        nextIndex = baseList.findIndex((t) => t.video_id === track.video_id);
+        nextIndex = foundIdx >= 0 ? foundIdx : 0;
       }
 
       if (
@@ -596,21 +659,22 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       }
     } else {
       // Seed playback from Search: play clicked track immediately, clear remaining queue, & trigger Vibe Radio
-      nextOriginalQueue = [track];
-      nextQueue = [track];
+      activeQueuedTrack = toQueuedTrack(track);
+      nextOriginalQueue = [activeQueuedTrack];
+      nextQueue = [activeQueuedTrack];
       nextIndex = 0;
       shouldFetchRadioReplace = state.autoplayRadio;
     }
 
     set({
-      currentTrack: track,
+      currentTrack: activeQueuedTrack,
       originalQueue: nextOriginalQueue,
       queue: nextQueue,
       queueIndex: nextIndex,
       isPlaying: true,
       isBuffering: true,
       currentTime: 0,
-      duration: track.duration_seconds || 0,
+      duration: activeQueuedTrack.duration_seconds || 0,
       prefetchedVideoId: null,
       playbackError: null,
     });
@@ -646,13 +710,14 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     }
 
     const matchIndex = state.queue.findIndex((t) => t.video_id === track.video_id);
-    const resolvedTrack = matchIndex >= 0 ? state.queue[matchIndex] : track;
+    const resolvedTrack =
+      matchIndex >= 0 ? state.queue[matchIndex] : toQueuedTrack(track);
     const nextQueue =
       matchIndex >= 0
         ? state.queue
         : state.queue.length > 0
-          ? [...state.queue, track]
-          : [track];
+          ? [...state.queue, resolvedTrack]
+          : [resolvedTrack];
     const nextIndex = matchIndex >= 0 ? matchIndex : nextQueue.length - 1;
 
     set({
@@ -900,22 +965,19 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       return;
     }
 
+    const queuedTrack = toQueuedTrack(track);
     const insertAt = Math.max(0, state.queueIndex + 1);
     const beforeQueue = state.queue.slice(0, insertAt);
-    const afterQueue = state.queue
-      .slice(insertAt)
-      .filter((t) => t.video_id !== track.video_id);
-    const updatedQueue = [...beforeQueue, track, ...afterQueue];
+    const afterQueue = state.queue.slice(insertAt);
+    const updatedQueue = [...beforeQueue, queuedTrack, ...afterQueue];
 
-    const origIdx = state.originalQueue.findIndex(
-      (t) => t.video_id === state.currentTrack?.video_id
+    const origIdx = state.originalQueue.findIndex((t) =>
+      state.currentTrack ? matchesQueuedTrack(t, state.currentTrack) : false
     );
     const origInsertAt = origIdx >= 0 ? origIdx + 1 : state.originalQueue.length;
     const beforeOrig = state.originalQueue.slice(0, origInsertAt);
-    const afterOrig = state.originalQueue
-      .slice(origInsertAt)
-      .filter((t) => t.video_id !== track.video_id);
-    const updatedOriginal = [...beforeOrig, track, ...afterOrig];
+    const afterOrig = state.originalQueue.slice(origInsertAt);
+    const updatedOriginal = [...beforeOrig, queuedTrack, ...afterOrig];
 
     set({
       queue: updatedQueue,
@@ -957,22 +1019,48 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       return;
     }
 
+    const queuedTracks = tracks.map(toQueuedTrack);
     set({
-      queue: [...state.queue, ...tracks],
-      originalQueue: [...state.originalQueue, ...tracks],
+      queue: [...state.queue, ...queuedTracks],
+      originalQueue: [...state.originalQueue, ...queuedTracks],
     });
     state.showToast(`Added ${count} ${noun} to queue`);
   },
 
-  removeFromQueue: (index) => {
+  removeFromQueue: (index, queueItemId) => {
     const state = get();
-    if (index < 0 || index >= state.queue.length || index === state.queueIndex) {
+    let targetIndex = -1;
+    if (queueItemId) {
+      targetIndex = state.queue.findIndex(
+        (t, i) => i !== state.queueIndex && t.queueItemId === queueItemId
+      );
+    }
+    if (targetIndex < 0) {
+      targetIndex = index;
+    }
+    if (
+      targetIndex < 0 ||
+      targetIndex >= state.queue.length ||
+      targetIndex === state.queueIndex
+    ) {
       return;
     }
-    const updated = state.queue.filter((_, i) => i !== index);
-    const nextIndex = index < state.queueIndex ? state.queueIndex - 1 : state.queueIndex;
+
+    const removedItem = state.queue[targetIndex];
+    const updatedQueue = state.queue.filter((_, i) => i !== targetIndex);
+    const nextIndex =
+      targetIndex < state.queueIndex ? state.queueIndex - 1 : state.queueIndex;
+
+    let updatedOriginal = state.originalQueue;
+    if (removedItem?.queueItemId) {
+      updatedOriginal = state.originalQueue.filter(
+        (t) => t.queueItemId !== removedItem.queueItemId
+      );
+    }
+
     set({
-      queue: updated,
+      queue: updatedQueue,
+      originalQueue: updatedOriginal,
       queueIndex: nextIndex,
       prefetchedVideoId: null,
     });
@@ -1010,7 +1098,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       const restored = originalQueue.length ? originalQueue : queue;
       const newIdx = Math.max(
         0,
-        restored.findIndex((t) => t.video_id === currentTrack.video_id)
+        restored.findIndex((t) => matchesQueuedTrack(t, currentTrack))
       );
       set({
         shuffle: false,
@@ -1101,20 +1189,46 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   runSearch: async (q) => {
     const trimmed = q.trim();
     if (!trimmed) {
-      set({ searchResults: null, isSearching: false, searchError: null });
+      set({
+        searchResults: null,
+        isSearching: false,
+        searchError: null,
+        searchErrorKind: null,
+      });
       return;
     }
-    set({ isSearching: true, searchError: null });
+
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      set({
+        searchResults: null,
+        isSearching: false,
+        searchError: "No internet connection",
+        searchErrorKind: "offline",
+      });
+      return;
+    }
+
+    set({ isSearching: true, searchError: null, searchErrorKind: null });
     try {
       const results = await api.searchTracks(trimmed);
       // Ensure response corresponds to latest query if user typed fast
       if (get().searchQuery.trim() === trimmed || trimmed.length > 0) {
-        set({ searchResults: results, isSearching: false });
+        set({
+          searchResults: results,
+          isSearching: false,
+          searchError: null,
+          searchErrorKind: null,
+        });
       }
     } catch (err) {
+      const offline = api.isNetworkError(err);
       set({
+        searchResults: null,
         isSearching: false,
-        searchError: err instanceof Error ? err.message : "Search failed",
+        searchError: offline
+          ? "No internet connection"
+          : "Unable to complete search right now. Please try again.",
+        searchErrorKind: offline ? "offline" : "generic",
       });
     }
   },
@@ -1299,6 +1413,21 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     get().navigate({ type: "playlist", playlistId: created.id });
     get().showToast(`Created playlist "${created.name}"`);
     return created;
+  },
+
+  createPlaylistAndAddTrack: async (name, track, coverColor = "#FF5E4D") => {
+    const created = await api.createPlaylist(name, "", coverColor);
+    const addedRes = await api.addTrackToPlaylist(created.id, track);
+    const playlists = await api.fetchPlaylists();
+    set((prev) => ({
+      playlists,
+      activePlaylist:
+        prev.activePlaylist?.id === created.id
+          ? addedRes.playlist
+          : prev.activePlaylist,
+    }));
+    get().showToast(`Added to "${created.name}"`);
+    return addedRes.playlist;
   },
 
   deletePlaylist: async (playlistId) => {

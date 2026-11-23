@@ -1,16 +1,17 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Heart, ListPlus, Radio, Trash2 } from "lucide-react";
+import { ListPlus, Radio, Trash2 } from "lucide-react";
 import { usePlayerStore } from "../store/usePlayerStore";
 import type { Track } from "../types";
 
 interface SwipeableTrackRowProps {
   track: Track;
   children: React.ReactNode;
-  mode?: "default" | "queue";
+  mode?: "default" | "playlist" | "queue";
   canRemove?: boolean;
   onRemoveFromQueue?: () => void;
   removeIndex?: number;
-  onRemoveAt?: (index: number) => void;
+  onRemoveAt?: (index: number, queueItemId?: string) => void;
+  onRemoveFromPlaylist?: (videoId: string) => void;
 }
 
 const MAX_DRAG_PX = 115;
@@ -25,14 +26,14 @@ export const SwipeableTrackRow: React.FC<SwipeableTrackRowProps> = React.memo(
     onRemoveFromQueue,
     removeIndex,
     onRemoveAt,
+    onRemoveFromPlaylist,
   }) => {
-    const isAlreadyLiked = usePlayerStore((s) =>
-      Boolean(s.likedIds[track.video_id])
-    );
     const isJamActive = usePlayerStore((s) => s.jamState.active);
     const addToQueue = usePlayerStore((s) => s.addToQueue);
     const addTrackToJamSession = usePlayerStore((s) => s.addTrackToJamSession);
-    const toggleLike = usePlayerStore((s) => s.toggleLike);
+    const openAddToPlaylistModal = usePlayerStore(
+      (s) => s.openAddToPlaylistModal
+    );
     const showToast = usePlayerStore((s) => s.showToast);
 
     const [isCollapsing, setIsCollapsing] = useState(false);
@@ -41,7 +42,8 @@ export const SwipeableTrackRow: React.FC<SwipeableTrackRowProps> = React.memo(
     const backdropRef = useRef<HTMLDivElement | null>(null);
     const leftActionRef = useRef<HTMLDivElement | null>(null);
     const rightActionRef = useRef<HTMLDivElement | null>(null);
-    const heartIconRef = useRef<SVGSVGElement | null>(null);
+
+    const isRemoveMode = mode === "queue" || mode === "playlist";
 
     const dragXRef = useRef(0);
     const collapsingRef = useRef(false);
@@ -101,8 +103,9 @@ export const SwipeableTrackRow: React.FC<SwipeableTrackRowProps> = React.memo(
                 ? "#FF5E4D"
                 : "rgba(5, 150, 105, 0.9)";
             } else {
-              backdrop.style.backgroundColor =
-                mode === "queue" ? "rgba(220, 38, 38, 0.9)" : "#FF5E4D";
+              backdrop.style.backgroundColor = isRemoveMode
+                ? "rgba(220, 38, 38, 0.9)"
+                : "#FF5E4D";
             }
           }
         }
@@ -134,13 +137,8 @@ export const SwipeableTrackRow: React.FC<SwipeableTrackRowProps> = React.memo(
             rightAction.style.transform = "scale3d(0.75, 0.75, 1)";
           }
         }
-
-        if (heartIconRef.current && mode !== "queue") {
-          const shouldFill = isAlreadyLiked || x <= -TRIGGER_THRESHOLD_PX;
-          heartIconRef.current.style.fill = shouldFill ? "#000000" : "none";
-        }
       },
-      [isAlreadyLiked, isJamActive, mode]
+      [isJamActive, isRemoveMode]
     );
 
     const scheduleDragFrame = (nextX: number) => {
@@ -194,9 +192,8 @@ export const SwipeableTrackRow: React.FC<SwipeableTrackRowProps> = React.memo(
     };
 
     const clampDragDelta = (deltaX: number): number => {
-      if (mode === "queue") {
-        if (!canRemove) return 0;
-        return Math.max(-MAX_DRAG_PX, Math.min(0, deltaX));
+      if (mode === "queue" && !canRemove && deltaX < 0) {
+        return 0;
       }
       return Math.max(-MAX_DRAG_PX, Math.min(MAX_DRAG_PX, deltaX));
     };
@@ -227,7 +224,7 @@ export const SwipeableTrackRow: React.FC<SwipeableTrackRowProps> = React.memo(
           return;
         }
         if (absX > 12 && absX > absY * 1.3) {
-          if (mode === "queue" && (deltaX > 0 || !canRemove)) {
+          if (mode === "queue" && deltaX < 0 && !canRemove) {
             state.lockedAxis = "y";
             cancelDragRaf();
             if (dragXRef.current !== 0) {
@@ -281,30 +278,9 @@ export const SwipeableTrackRow: React.FC<SwipeableTrackRowProps> = React.memo(
         return;
       }
 
-      if (mode === "queue") {
-        if (canRemove && effectiveDragX <= -TRIGGER_THRESHOLD_PX) {
-          triggerHaptic();
-          collapsingRef.current = true;
-          setIsCollapsing(true);
-          applySwipeVisuals(-360, true);
-          collapseTimerRef.current = window.setTimeout(() => {
-            collapseTimerRef.current = null;
-            if (onRemoveAt && removeIndex !== undefined) {
-              onRemoveAt(removeIndex);
-            } else {
-              onRemoveFromQueue?.();
-            }
-            showToast("Removed from queue");
-          }, 190);
-          return;
-        }
-        applySwipeVisuals(0, true);
-        return;
-      }
-
-      applySwipeVisuals(0, true);
-
+      // Swipe Right (everywhere): Always Add to Queue (or Jam if active)
       if (effectiveDragX >= TRIGGER_THRESHOLD_PX) {
+        applySwipeVisuals(0, true);
         triggerHaptic();
         if (isJamActive) {
           void addTrackToJamSession(track);
@@ -313,14 +289,51 @@ export const SwipeableTrackRow: React.FC<SwipeableTrackRowProps> = React.memo(
           addToQueue(track);
           showToast("Added to queue");
         }
-      } else if (effectiveDragX <= -TRIGGER_THRESHOLD_PX) {
-        triggerHaptic();
-        if (!isAlreadyLiked) {
-          void toggleLike(track);
-        } else {
-          showToast("Already in Liked Songs");
-        }
+        return;
       }
+
+      // Swipe Left: Remove (Queue / Playlist) or Add to Playlist (everywhere else)
+      if (effectiveDragX <= -TRIGGER_THRESHOLD_PX) {
+        if (mode === "queue") {
+          if (canRemove) {
+            triggerHaptic();
+            collapsingRef.current = true;
+            setIsCollapsing(true);
+            applySwipeVisuals(-360, true);
+            collapseTimerRef.current = window.setTimeout(() => {
+              collapseTimerRef.current = null;
+              if (onRemoveAt && removeIndex !== undefined) {
+                onRemoveAt(removeIndex, track.queueItemId);
+              } else {
+                onRemoveFromQueue?.();
+              }
+              showToast("Removed from queue");
+            }, 190);
+            return;
+          }
+          applySwipeVisuals(0, true);
+          return;
+        }
+
+        if (mode === "playlist") {
+          triggerHaptic();
+          collapsingRef.current = true;
+          setIsCollapsing(true);
+          applySwipeVisuals(-360, true);
+          collapseTimerRef.current = window.setTimeout(() => {
+            collapseTimerRef.current = null;
+            onRemoveFromPlaylist?.(track.video_id);
+          }, 190);
+          return;
+        }
+
+        applySwipeVisuals(0, true);
+        triggerHaptic();
+        openAddToPlaylistModal(track);
+        return;
+      }
+
+      applySwipeVisuals(0, true);
     };
 
     const handleTouchEnd = (e: React.TouchEvent<HTMLDivElement>) => {
@@ -388,7 +401,7 @@ export const SwipeableTrackRow: React.FC<SwipeableTrackRowProps> = React.memo(
             )}
           </div>
 
-          {/* Right Side Content (Revealed on Left Swipe: Like or Remove from Queue) */}
+          {/* Right Side Content (Revealed on Left Swipe: Add to Playlist or Remove) */}
           <div
             ref={rightActionRef}
             style={{
@@ -398,21 +411,19 @@ export const SwipeableTrackRow: React.FC<SwipeableTrackRowProps> = React.memo(
                 : "scale3d(0.75, 0.75, 1)",
             }}
             className={`flex items-center gap-1.5 font-bold text-xs transition-transform duration-150 ${
-              mode === "queue" ? "text-white" : "text-black"
+              isRemoveMode ? "text-white" : "text-black"
             }`}
           >
-            {mode === "queue" ? (
+            {isRemoveMode ? (
               <>
                 <span>Remove</span>
                 <Trash2 size={18} />
               </>
             ) : (
-              <Heart
-                ref={heartIconRef}
-                size={20}
-                style={{ fill: isAlreadyLiked ? "#000000" : "none" }}
-                className="text-black"
-              />
+              <>
+                <span>Add to Playlist</span>
+                <ListPlus size={19} />
+              </>
             )}
           </div>
         </div>

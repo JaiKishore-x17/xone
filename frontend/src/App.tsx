@@ -1,5 +1,6 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Capacitor, registerPlugin, type PluginListenerHandle } from "@capacitor/core";
+import { AddToPlaylistModal } from "./components/AddToPlaylistModal";
 import { AudioEngine } from "./components/AudioEngine";
 import { JamModal } from "./components/JamModal";
 import { MainView } from "./components/MainView";
@@ -40,6 +41,7 @@ export const App: React.FC = () => {
   const isJamModalOpen = usePlayerStore((s) => s.isJamModalOpen);
   const isMobilePlayerExpanded = usePlayerStore((s) => s.isMobilePlayerExpanded);
   const isNewPlaylistModalOpen = usePlayerStore((s) => s.isNewPlaylistModalOpen);
+  const addToPlaylistModalTrack = usePlayerStore((s) => s.addToPlaylistModalTrack);
   const navigate = usePlayerStore((s) => s.navigate);
   const setKeyboardOpen = usePlayerStore((s) => s.setKeyboardOpen);
 
@@ -212,6 +214,7 @@ export const App: React.FC = () => {
   const isAnyBlockingModalOpen = () =>
     isMobilePlayerExpanded ||
     isNewPlaylistModalOpen ||
+    Boolean(addToPlaylistModalTrack) ||
     isJamModalOpen ||
     Boolean(document.querySelector('[role="dialog"]'));
 
@@ -292,6 +295,7 @@ export const App: React.FC = () => {
 
       {/* Modals & Toast */}
       <NewPlaylistModal />
+      <AddToPlaylistModal />
       <JamModal />
       <UpdateChecker />
 

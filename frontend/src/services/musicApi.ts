@@ -7,6 +7,31 @@ export function isNativePlatform(): boolean {
   return Capacitor.isNativePlatform();
 }
 
+export class OfflineSearchError extends Error {
+  constructor() {
+    super("No internet connection");
+    this.name = "OfflineSearchError";
+  }
+}
+
+export function isNetworkError(err: unknown): boolean {
+  if (typeof navigator !== "undefined" && navigator.onLine === false) {
+    return true;
+  }
+  if (err instanceof OfflineSearchError) {
+    return true;
+  }
+  const message =
+    err instanceof Error
+      ? err.message
+      : typeof err === "string"
+        ? err
+        : String(err ?? "");
+  return /unable to resolve host|unknownhostexception|failed to fetch|networkerror|network request failed|no address associated with hostname|connectexception|sockettimeoutexception|socketexception|eai_again|enotfound|err_internet_disconnected|err_name_not_resolved|no internet|offline/i.test(
+    message
+  );
+}
+
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
     ...init,
@@ -34,17 +59,28 @@ export async function searchTracks(query: string): Promise<SearchResponse> {
     return { query: "", top_result: null, songs: [] };
   }
 
-  if (isNativePlatform()) {
-    const res = await XoneAudio.searchSongs({ query: cleanQuery });
-    return {
-      query: cleanQuery,
-      top_result: res.topResult ?? null,
-      songs: res.songs ?? [],
-    };
+  if (typeof navigator !== "undefined" && navigator.onLine === false) {
+    throw new OfflineSearchError();
   }
 
-  const encoded = encodeURIComponent(cleanQuery);
-  return requestJson<SearchResponse>(`/api/search?q=${encoded}`);
+  try {
+    if (isNativePlatform()) {
+      const res = await XoneAudio.searchSongs({ query: cleanQuery });
+      return {
+        query: cleanQuery,
+        top_result: res.topResult ?? null,
+        songs: res.songs ?? [],
+      };
+    }
+
+    const encoded = encodeURIComponent(cleanQuery);
+    return await requestJson<SearchResponse>(`/api/search?q=${encoded}`);
+  } catch (err) {
+    if (isNetworkError(err)) {
+      throw new OfflineSearchError();
+    }
+    throw new Error("Unable to complete search right now. Please try again.");
+  }
 }
 
 export async function fetchRadioQueue(

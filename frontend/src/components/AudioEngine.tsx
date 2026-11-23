@@ -155,7 +155,7 @@ const NativeAudioController: React.FC = () => {
           err instanceof Error ? err.message : "Unable to start native playback"
         );
       });
-  }, [currentTrack?.video_id]);
+  }, [currentTrack?.video_id, currentTrack?.queueItemId]);
 
   // Keep native ExoPlayer queue synchronized for gapless background & lock-screen skips
   useEffect(() => {
@@ -332,7 +332,7 @@ const WebAudioController: React.FC = () => {
     };
 
     void startPlayback();
-  }, [currentTrack?.video_id]);
+  }, [currentTrack?.video_id, currentTrack?.queueItemId]);
 
   // Sync play/pause toggle on existing loaded track
   useEffect(() => {

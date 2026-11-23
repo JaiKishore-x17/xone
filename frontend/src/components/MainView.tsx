@@ -12,15 +12,18 @@ import {
   Play,
   Plus,
   Radio,
+  RefreshCw,
   Search,
   Shuffle,
   Sparkles,
   Trash2,
+  WifiOff,
   X,
 } from "lucide-react";
 import { usePlayerStore } from "../store/usePlayerStore";
 import { formatTotalDuration, getTimeGreeting } from "../utils/format";
 import { SwipeableTrackRow } from "./SwipeableTrackRow";
+import { dismissSearchKeyboard, searchInputRef } from "./TopBar";
 import { TrackArtwork } from "./TrackArtwork";
 import { TrackContextMenu, type ContextMenuState } from "./TrackContextMenu";
 import { TrackRow } from "./TrackRow";
@@ -42,6 +45,7 @@ export const MainView: React.FC = () => {
   const recentSearches = usePlayerStore((s) => s.recentSearches);
   const isSearching = usePlayerStore((s) => s.isSearching);
   const searchError = usePlayerStore((s) => s.searchError);
+  const searchErrorKind = usePlayerStore((s) => s.searchErrorKind);
 
   const playlists = usePlayerStore((s) => s.playlists);
   const activePlaylist = usePlayerStore((s) => s.activePlaylist);
@@ -53,6 +57,9 @@ export const MainView: React.FC = () => {
   const playTrack = usePlayerStore((s) => s.playTrack);
   const toggleShuffle = usePlayerStore((s) => s.toggleShuffle);
   const deletePlaylist = usePlayerStore((s) => s.deletePlaylist);
+  const removeTrackFromPlaylist = usePlayerStore(
+    (s) => s.removeTrackFromPlaylist
+  );
   const reorderPlaylistTracks = usePlayerStore((s) => s.reorderPlaylistTracks);
   const removeFromQueue = usePlayerStore((s) => s.removeFromQueue);
   const clearUpcomingQueue = usePlayerStore((s) => s.clearUpcomingQueue);
@@ -62,6 +69,7 @@ export const MainView: React.FC = () => {
     (s) => s.setNewPlaylistModalOpen
   );
   const setSearchQuery = usePlayerStore((s) => s.setSearchQuery);
+  const runSearch = usePlayerStore((s) => s.runSearch);
   const addRecentSearchTrack = usePlayerStore((s) => s.addRecentSearchTrack);
   const removeRecentSearchTrack = usePlayerStore(
     (s) => s.removeRecentSearchTrack
@@ -72,6 +80,8 @@ export const MainView: React.FC = () => {
   const [collectionMenuOpen, setCollectionMenuOpen] = useState(false);
   const collectionMenuRef = useRef<HTMLDivElement | null>(null);
   const mainScrollRef = useRef<HTMLDivElement | null>(null);
+  const searchTouchStartYRef = useRef<number | null>(null);
+  const ignoreSearchScrollUntilRef = useRef<number>(0);
 
   const activeViewKey =
     activeView.type === "playlist"
@@ -79,24 +89,70 @@ export const MainView: React.FC = () => {
       : activeView.type;
 
   useLayoutEffect(() => {
+    ignoreSearchScrollUntilRef.current = Date.now() + 150;
     mainScrollRef.current?.scrollTo({ top: 0, behavior: "instant" });
   }, [activeViewKey, activePlaylist?.id]);
 
   useLayoutEffect(() => {
     if (activeView.type === "search") {
+      ignoreSearchScrollUntilRef.current = Date.now() + 150;
       mainScrollRef.current?.scrollTo({ top: 0, behavior: "instant" });
     }
   }, [searchQuery, activeView.type]);
+
+  const handleSearchTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (e.touches.length === 1) {
+      searchTouchStartYRef.current = e.touches[0].clientY;
+    } else {
+      searchTouchStartYRef.current = null;
+    }
+  };
+
+  const handleSearchTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
+    const startY = searchTouchStartYRef.current;
+    if (startY === null || e.touches.length !== 1) return;
+    if (Math.abs(e.touches[0].clientY - startY) > 8) {
+      searchTouchStartYRef.current = null;
+      if (
+        searchInputRef.current &&
+        document.activeElement === searchInputRef.current
+      ) {
+        dismissSearchKeyboard();
+      }
+    }
+  };
+
+  const handleSearchScroll = () => {
+    if (Date.now() < ignoreSearchScrollUntilRef.current) return;
+    if (
+      searchInputRef.current &&
+      document.activeElement === searchInputRef.current
+    ) {
+      dismissSearchKeyboard();
+    }
+  };
 
   const handleCloseContextMenu = useCallback(() => {
     setContextMenu(null);
   }, []);
 
   const handleRemoveFromQueueAt = useCallback(
-    (index: number) => {
-      removeFromQueue(index);
+    (index: number, queueItemId?: string) => {
+      removeFromQueue(index, queueItemId);
     },
     [removeFromQueue]
+  );
+
+  const activePlaylistId =
+    activeView.type === "playlist" ? activeView.playlistId : null;
+
+  const handleRemoveFromActivePlaylist = useCallback(
+    (videoId: string) => {
+      if (activePlaylistId !== null) {
+        void removeTrackFromPlaylist(activePlaylistId, videoId);
+      }
+    },
+    [activePlaylistId, removeTrackFromPlaylist]
   );
 
   useEffect(() => {
@@ -290,6 +346,15 @@ export const MainView: React.FC = () => {
     return (
       <div
         ref={mainScrollRef}
+        onScroll={handleSearchScroll}
+        onTouchStart={handleSearchTouchStart}
+        onTouchMove={handleSearchTouchMove}
+        onTouchEnd={() => {
+          searchTouchStartYRef.current = null;
+        }}
+        onTouchCancel={() => {
+          searchTouchStartYRef.current = null;
+        }}
         className="flex-1 overflow-y-auto overflow-x-hidden xone-scroll-y px-4 md:px-6 pb-[calc(8rem+env(safe-area-inset-bottom))] md:pb-24 pt-5 bg-[#000000]"
       >
         <div className="flex items-center justify-between gap-3 mb-5">
@@ -505,6 +570,15 @@ export const MainView: React.FC = () => {
     return (
       <div
         ref={mainScrollRef}
+        onScroll={handleSearchScroll}
+        onTouchStart={handleSearchTouchStart}
+        onTouchMove={handleSearchTouchMove}
+        onTouchEnd={() => {
+          searchTouchStartYRef.current = null;
+        }}
+        onTouchCancel={() => {
+          searchTouchStartYRef.current = null;
+        }}
         className="flex-1 overflow-y-auto overflow-x-hidden xone-scroll-y px-4 md:px-6 pb-[calc(8rem+env(safe-area-inset-bottom))] md:pb-24 pt-5 bg-[#000000]"
       >
         {!searchQuery.trim() ? (
@@ -644,9 +718,51 @@ export const MainView: React.FC = () => {
             <p className="text-sm text-[#B3B3B3]">Searching...</p>
           </div>
         ) : searchError ? (
-          <div className="rounded-lg bg-[#141414] border border-[#FF5E4D]/30 p-6 text-center max-w-lg mx-auto mt-10">
-            <p className="text-sm font-bold text-[#FF5E4D]">{searchError}</p>
-          </div>
+          searchErrorKind === "offline" ? (
+            <div className="max-w-md mx-auto mt-10 md:mt-14 rounded-2xl bg-[#141414] border border-white/10 p-6 md:p-8 text-center space-y-4">
+              <div className="w-14 h-14 rounded-2xl bg-[#FF5E4D]/15 border border-[#FF5E4D]/35 flex items-center justify-center mx-auto text-[#FF5E4D]">
+                <WifiOff size={26} />
+              </div>
+              <div className="space-y-1.5">
+                <h2 className="text-lg font-extrabold text-white">
+                  No internet connection
+                </h2>
+                <p className="text-sm text-[#B3B3B3] leading-relaxed">
+                  Check your connection and try again, or play your downloaded
+                  songs in Library.
+                </p>
+              </div>
+              <div className="flex items-center justify-center gap-2.5 pt-1">
+                <button
+                  type="button"
+                  onClick={() => void runSearch(searchQuery)}
+                  className="min-h-[42px] px-5 py-2 rounded-full bg-[#FF5E4D] hover:bg-[#FF7466] active:scale-95 text-black text-xs font-extrabold inline-flex items-center gap-1.5 transition-all"
+                >
+                  <RefreshCw size={14} />
+                  <span>Retry</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => navigate({ type: "library" })}
+                  className="min-h-[42px] px-5 py-2 rounded-full bg-[#1E1E1E] hover:bg-[#282828] border border-white/10 text-white text-xs font-bold transition-colors"
+                >
+                  Library
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="max-w-md mx-auto mt-10 md:mt-14 rounded-2xl bg-[#141414] border border-white/10 p-6 text-center space-y-3">
+              <p className="text-sm font-bold text-white">{searchError}</p>
+              <button
+                type="button"
+                onClick={() => void runSearch(searchQuery)}
+                className="min-h-[40px] px-5 py-2 rounded-full bg-[#FF5E4D] hover:bg-[#FF7466] active:scale-95 text-black text-xs font-extrabold inline-flex items-center gap-1.5 transition-all"
+              >
+                <RefreshCw size={14} />
+                <span>Retry</span>
+              </button>
+            </div>
+          )
         ) : songs.length === 0 && !topResult ? (
           <div className="text-center py-20">
             <p className="text-lg font-bold text-white">
@@ -1185,7 +1301,12 @@ export const MainView: React.FC = () => {
               {renderPlayableListHeader()}
               <div className="space-y-0.5">
                 {tracks.map((track, idx) => (
-                  <SwipeableTrackRow key={track.video_id} track={track}>
+                  <SwipeableTrackRow
+                    key={track.video_id}
+                    track={track}
+                    mode="playlist"
+                    onRemoveFromPlaylist={handleRemoveFromActivePlaylist}
+                  >
                     <TrackRow
                       track={track}
                       index={idx}
@@ -1361,7 +1482,10 @@ export const MainView: React.FC = () => {
 
               return (
                 <SwipeableTrackRow
-                  key={`${track.video_id}-${absoluteIdx}`}
+                  key={
+                    track.queueItemId ||
+                    `${track.id || track.video_id}-${absoluteIdx}`
+                  }
                   track={track}
                   mode="queue"
                   canRemove={!jamState.active}
@@ -1409,7 +1533,9 @@ export const MainView: React.FC = () => {
                     {!jamState.active && (
                       <button
                         type="button"
-                        onClick={() => removeFromQueue(absoluteIdx)}
+                        onClick={() =>
+                          removeFromQueue(absoluteIdx, track.queueItemId)
+                        }
                         aria-label="Remove from queue"
                         className="min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0 flex items-center justify-center p-2 md:p-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 rounded-full text-[#B3B3B3] hover:text-[#FF5E4D] transition-all shrink-0"
                       >

@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { Capacitor, registerPlugin } from "@capacitor/core";
 import {
   ChevronLeft,
   ChevronRight,
@@ -11,6 +12,28 @@ import {
 import { usePlayerStore } from "../store/usePlayerStore";
 import { AboutModal } from "./AboutModal";
 import { XoneLogo } from "./XoneLogo";
+
+interface CapacitorKeyboardHidePlugin {
+  hide?: () => Promise<void>;
+}
+
+const CapacitorKeyboard = registerPlugin<CapacitorKeyboardHidePlugin>("Keyboard");
+
+export const searchInputRef = React.createRef<HTMLInputElement>();
+
+export function dismissSearchKeyboard(): void {
+  const input = searchInputRef.current;
+  if (input && document.activeElement === input) {
+    input.blur();
+  }
+  if (Capacitor.isNativePlatform()) {
+    try {
+      void CapacitorKeyboard.hide?.().catch(() => {});
+    } catch {
+      // ignore if native Keyboard plugin is not installed
+    }
+  }
+}
 
 export const TopBar: React.FC = () => {
   const historyIndex = usePlayerStore((s) => s.historyIndex);
@@ -67,6 +90,21 @@ export const TopBar: React.FC = () => {
     }
   };
 
+  const handleSubmitSearch = () => {
+    if (debounceRef.current !== null) {
+      window.clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+    }
+    dismissSearchKeyboard();
+    const trimmed = searchQuery.trim();
+    if (!trimmed) return;
+    if (activeView.type !== "search") {
+      navigate({ type: "search" });
+    }
+    lastSearchedRef.current = trimmed;
+    void runSearch(trimmed);
+  };
+
   return (
     <>
       <header className="sticky top-0 z-30 h-[calc(4rem+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)] px-3 md:px-6 flex items-center justify-between gap-2 md:gap-4 bg-black/95 shadow-[0_6px_20px_rgba(0,0,0,0.85)] border-b border-white/[0.06]">
@@ -103,18 +141,35 @@ export const TopBar: React.FC = () => {
           </button>
         </div>
 
-        <div className="relative flex-1 min-w-0 max-w-md group">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            handleSubmitSearch();
+          }}
+          className="relative flex-1 min-w-0 max-w-md group"
+        >
           <Search
             size={18}
             className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#B3B3B3] group-focus-within:text-[#FF5E4D] transition-colors pointer-events-none"
           />
           <input
+            ref={searchInputRef}
             id="xone-search-input"
-            type="text"
+            type="search"
+            enterKeyHint="search"
             value={searchQuery}
+            onClick={() => {
+              searchInputRef.current?.focus();
+            }}
             onFocus={() => {
               if (activeView.type !== "search" && searchQuery.trim()) {
                 navigate({ type: "search" });
+              }
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                handleSubmitSearch();
               }
             }}
             onChange={(e) => handleInputChange(e.target.value)}
@@ -143,7 +198,7 @@ export const TopBar: React.FC = () => {
               </kbd>
             )}
           </div>
-        </div>
+        </form>
       </div>
 
       {/* Right: Jam / Multi-Speaker + Queue Buttons */}

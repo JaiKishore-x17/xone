@@ -31,13 +31,33 @@ interface LrclibApiRecord {
 const LYRICS_DB_NAME = "xone_lyrics_db";
 const LYRICS_DB_VERSION = 1;
 const LYRICS_STORE_NAME = "lyrics_cache";
-const LRCLIB_HEADERS: HeadersInit = {
-  "User-Agent": "Xone/1.0",
-};
+const LRCLIB_TIMEOUT_MS = 8000;
 
 const memoryCache = new Map<string, LyricsResult>();
 const inFlightRequests = new Map<string, Promise<LyricsResult>>();
 let lyricsDbPromise: Promise<IDBDatabase> | null = null;
+
+function isValidLyricsHit(result: LyricsResult | null | undefined): result is LyricsResult {
+  if (!result || result.notFound) return false;
+  return Boolean(
+    result.instrumental ||
+      (Array.isArray(result.lines) && result.lines.length > 0) ||
+      (typeof result.plainLyrics === "string" && result.plainLyrics.trim().length > 0)
+  );
+}
+
+async function fetchWithTimeout(
+  url: string,
+  timeoutMs = LRCLIB_TIMEOUT_MS
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { signal: controller.signal });
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+}
 
 function openLyricsDb(): Promise<IDBDatabase> {
   if (typeof indexedDB === "undefined") {
@@ -67,7 +87,7 @@ function openLyricsDb(): Promise<IDBDatabase> {
 
 async function readLyricsFromCache(id: string): Promise<LyricsResult | null> {
   const memHit = memoryCache.get(id);
-  if (memHit) return memHit;
+  if (isValidLyricsHit(memHit)) return memHit;
 
   try {
     const db = await openLyricsDb();
@@ -81,7 +101,7 @@ async function readLyricsFromCache(id: string): Promise<LyricsResult | null> {
           reject(req.error ?? new Error("Failed reading lyrics cache"));
       }
     );
-    if (record) {
+    if (isValidLyricsHit(record)) {
       memoryCache.set(id, record);
       return record;
     }
@@ -93,6 +113,7 @@ async function readLyricsFromCache(id: string): Promise<LyricsResult | null> {
 }
 
 async function writeLyricsToCache(result: LyricsResult): Promise<void> {
+  if (!isValidLyricsHit(result)) return;
   memoryCache.set(result.id, result);
   try {
     const db = await openLyricsDb();
@@ -288,8 +309,6 @@ async function fetchLyricsFromNetwork(
   const effectiveDuration =
     durationSec > 0 ? durationSec : track.duration_seconds || 0;
 
-  let networkFailed = false;
-
   // Step 1: Exact /api/get lookup
   if (cleanTitle && cleanArtist) {
     try {
@@ -301,22 +320,20 @@ async function fetchLyricsFromNetwork(
         params.set("duration", String(Math.round(effectiveDuration)));
       }
 
-      const res = await fetch(`https://lrclib.net/api/get?${params.toString()}`, {
-        headers: LRCLIB_HEADERS,
-      });
+      const res = await fetchWithTimeout(
+        `https://lrclib.net/api/get?${params.toString()}`
+      );
 
       if (res.ok) {
         const data = (await res.json()) as LrclibApiRecord;
         const parsed = buildResultFromRecord(id, data);
-        if (!parsed.notFound) {
+        if (isValidLyricsHit(parsed)) {
           await writeLyricsToCache(parsed);
           return parsed;
         }
-      } else if (res.status !== 404) {
-        networkFailed = true;
       }
     } catch {
-      networkFailed = true;
+      // timeout or network failure — fall through to /api/search
     }
   }
 
@@ -329,7 +346,7 @@ async function fetchLyricsFromNetwork(
   if (searchQuery) {
     try {
       const searchUrl = `https://lrclib.net/api/search?q=${encodeURIComponent(searchQuery)}`;
-      const res = await fetch(searchUrl, { headers: LRCLIB_HEADERS });
+      const res = await fetchWithTimeout(searchUrl);
       if (res.ok) {
         const list = (await res.json()) as LrclibApiRecord[];
         const best = pickBestSearchCandidate(
@@ -340,21 +357,19 @@ async function fetchLyricsFromNetwork(
         );
         if (best) {
           const parsed = buildResultFromRecord(id, best);
-          if (!parsed.notFound) {
+          if (isValidLyricsHit(parsed)) {
             await writeLyricsToCache(parsed);
             return parsed;
           }
         }
-        networkFailed = false;
-      } else {
-        networkFailed = true;
       }
     } catch {
-      networkFailed = true;
+      // timeout or network failure — do not cache
     }
   }
 
-  const missResult: LyricsResult = {
+  // Never persist negative/failed/timed-out results in IndexedDB or memory cache
+  return {
     id,
     syncedLyrics: null,
     plainLyrics: null,
@@ -363,19 +378,12 @@ async function fetchLyricsFromNetwork(
     notFound: true,
     fetchedAt: Date.now(),
   };
-
-  // Persist confirmed misses so repeat offline plays don't wait on failed requests;
-  // do not cache offline network errors so connectivity recovery retries cleanly.
-  if (!networkFailed) {
-    await writeLyricsToCache(missResult);
-  }
-
-  return missResult;
 }
 
 export async function getLyricsForTrack(
   track: Track,
-  durationSec = 0
+  durationSec = 0,
+  forceRefresh = false
 ): Promise<LyricsResult> {
   const id = track.id || track.video_id;
   if (!id) {
@@ -390,18 +398,22 @@ export async function getLyricsForTrack(
     };
   }
 
-  const cached = await readLyricsFromCache(id);
-  if (cached) {
-    return cached;
-  }
+  if (!forceRefresh) {
+    const cached = await readLyricsFromCache(id);
+    if (cached) {
+      return cached;
+    }
 
-  const existing = inFlightRequests.get(id);
-  if (existing) {
-    return existing;
+    const existing = inFlightRequests.get(id);
+    if (existing) {
+      return existing;
+    }
   }
 
   const promise = fetchLyricsFromNetwork(track, durationSec).finally(() => {
-    inFlightRequests.delete(id);
+    if (inFlightRequests.get(id) === promise) {
+      inFlightRequests.delete(id);
+    }
   });
   inFlightRequests.set(id, promise);
   return promise;

@@ -1,5 +1,6 @@
 export interface Track {
   id?: string;
+  queueItemId?: string;
   video_id: string;
   title: string;
   artist: string;
