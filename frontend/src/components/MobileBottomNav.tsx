@@ -1,5 +1,5 @@
 import React from "react";
-import { Home, Library, Search } from "lucide-react";
+import { Home, Library, Search, Settings } from "lucide-react";
 import { usePlayerStore } from "../store/usePlayerStore";
 
 export const MobileBottomNav: React.FC = () => {
@@ -18,6 +18,7 @@ export const MobileBottomNav: React.FC = () => {
       activeView.type === "downloads" ||
       activeView.type === "playlist" ||
       activeView.type === "queue");
+  const isSettings = !isJamModalOpen && activeView.type === "settings";
 
   return (
     <nav
@@ -72,6 +73,20 @@ export const MobileBottomNav: React.FC = () => {
       >
         <Library size={20} />
         <span>Library</span>
+      </button>
+
+      <button
+        type="button"
+        onClick={() => {
+          setJamModalOpen(false);
+          navigate({ type: "settings" });
+        }}
+        className={`min-h-[44px] min-w-[56px] flex flex-col items-center justify-center gap-0.5 text-[11px] font-semibold transition-colors ${
+          isSettings ? "text-[#FF5E4D]" : "text-[#B3B3B3] hover:text-white"
+        }`}
+      >
+        <Settings size={20} />
+        <span>Settings</span>
       </button>
     </nav>
   );

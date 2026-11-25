@@ -1,6 +1,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   ChevronDown,
+  Gamepad2,
   Heart,
   ListMusic,
   Loader2,
@@ -28,8 +29,10 @@ import { TrackContextMenu, type ContextMenuState } from "./TrackContextMenu";
 
 const MiniPlayerProgressBar: React.FC<{ fallbackDuration?: number }> =
   React.memo(({ fallbackDuration = 0 }) => {
-    const currentTime = usePlayerStore((s) => s.currentTime);
+    const isDashOpen = usePlayerStore((s) => Boolean(s.dashTrack));
+    const currentTime = usePlayerStore((s) => (s.dashTrack ? 0 : s.currentTime));
     const duration = usePlayerStore((s) => s.duration);
+    if (isDashOpen) return null;
     const effectiveDuration = duration > 0 ? duration : fallbackDuration;
     const progressPct =
       effectiveDuration > 0
@@ -62,13 +65,16 @@ const MobileSeekSection: React.FC<{
   hasTrack: boolean;
   fallbackDuration?: number;
 }> = React.memo(({ hasTrack, fallbackDuration = 0 }) => {
-  const currentTime = usePlayerStore((s) => s.currentTime);
+  const isDashOpen = usePlayerStore((s) => Boolean(s.dashTrack));
+  const currentTime = usePlayerStore((s) => (s.dashTrack ? 0 : s.currentTime));
   const duration = usePlayerStore((s) => s.duration);
   const seekTo = usePlayerStore((s) => s.seekTo);
 
   const barRef = useRef<HTMLDivElement | null>(null);
   const [isDraggingSeek, setIsDraggingSeek] = useState(false);
   const [dragSeekValue, setDragSeekValue] = useState(0);
+
+  if (isDashOpen) return null;
 
   const effectiveDuration = duration > 0 ? duration : fallbackDuration;
   const displayedTime = isDraggingSeek ? dragSeekValue : currentTime;
@@ -133,13 +139,16 @@ const DesktopSeekSection: React.FC<{
   hasTrack: boolean;
   fallbackDuration?: number;
 }> = React.memo(({ hasTrack, fallbackDuration = 0 }) => {
-  const currentTime = usePlayerStore((s) => s.currentTime);
+  const isDashOpen = usePlayerStore((s) => Boolean(s.dashTrack));
+  const currentTime = usePlayerStore((s) => (s.dashTrack ? 0 : s.currentTime));
   const duration = usePlayerStore((s) => s.duration);
   const seekTo = usePlayerStore((s) => s.seekTo);
 
   const barRef = useRef<HTMLDivElement | null>(null);
   const [isDraggingSeek, setIsDraggingSeek] = useState(false);
   const [dragSeekValue, setDragSeekValue] = useState(0);
+
+  if (isDashOpen) return null;
 
   const effectiveDuration = duration > 0 ? duration : fallbackDuration;
   const displayedTime = isDraggingSeek ? dragSeekValue : currentTime;
@@ -213,6 +222,7 @@ const DesktopSeekSection: React.FC<{
 DesktopSeekSection.displayName = "DesktopSeekSection";
 
 export const PlayerBar: React.FC = () => {
+  const isDashOpen = usePlayerStore((s) => Boolean(s.dashTrack));
   const currentTrack = usePlayerStore((s) => s.currentTrack);
   const isPlaying = usePlayerStore((s) => s.isPlaying);
   const isBuffering = usePlayerStore((s) => s.isBuffering);
@@ -242,6 +252,7 @@ export const PlayerBar: React.FC = () => {
   const toggleDownload = usePlayerStore((s) => s.toggleDownload);
   const toggleEightD = usePlayerStore((s) => s.toggleEightD);
   const toggleSlowedReverb = usePlayerStore((s) => s.toggleSlowedReverb);
+  const openXoneDash = usePlayerStore((s) => s.openXoneDash);
   const setJamModalOpen = usePlayerStore((s) => s.setJamModalOpen);
   const navigate = usePlayerStore((s) => s.navigate);
   const isMobileExpanded = usePlayerStore((s) => s.isMobilePlayerExpanded);
@@ -848,6 +859,8 @@ export const PlayerBar: React.FC = () => {
     resetNpTrackPosition();
   };
 
+  if (isDashOpen) return null;
+
   return (
     <>
       {/* ===================== COMPACT MOBILE MINI-PLAYER (< 768px) ===================== */}
@@ -983,18 +996,18 @@ export const PlayerBar: React.FC = () => {
           {/* Top Drag Handle Pill + Header */}
           <div data-np-handle="true">
             <div className="w-10 h-1 rounded-full bg-white/25 mx-auto mb-2" />
-            <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center justify-between gap-2 -mx-2">
               <button
                 type="button"
                 onClick={closeNowPlayingSmooth}
                 aria-label="Minimize now playing"
-                className="min-w-[44px] min-h-[44px] -ml-2 flex items-center justify-center rounded-full text-white hover:bg-white/10 transition-colors"
+                className="w-11 h-11 shrink-0 flex items-center justify-center rounded-full text-white hover:bg-white/10 transition-colors"
               >
                 <ChevronDown size={26} />
               </button>
 
-              <div className="min-w-0 text-center flex-1">
-                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#B3B3B3]">
+              <div className="flex-1 min-w-0 text-center px-2">
+                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#B3B3B3] whitespace-nowrap">
                   Now Playing
                 </p>
                 <p className="text-xs font-semibold text-white truncate mt-0.5">
@@ -1002,50 +1015,33 @@ export const PlayerBar: React.FC = () => {
                 </p>
               </div>
 
-              <div className="flex items-center -mr-2">
-                <button
-                  type="button"
-                  onClick={() => setIsLyricsOpen((v) => !v)}
-                  aria-pressed={isLyricsOpen}
-                  aria-label={isLyricsOpen ? "Show album artwork" : "Show lyrics"}
-                  className={`min-w-[40px] min-h-[44px] flex items-center justify-center rounded-full transition-colors ${
-                    isLyricsOpen
-                      ? "text-[#FF5E4D] bg-[#FF5E4D]/15"
-                      : "text-white hover:bg-white/10"
-                  }`}
-                >
-                  <Mic2 size={20} />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsMobileExpanded(false);
-                    navigate({ type: "queue" });
-                  }}
-                  aria-label="Open queue"
-                  className={`min-w-[40px] min-h-[44px] flex items-center justify-center rounded-full transition-colors ${
-                    activeView.type === "queue"
-                      ? "text-[#FF5E4D]"
-                      : "text-white hover:bg-white/10"
-                  }`}
-                >
-                  <ListMusic size={21} />
-                </button>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    setNowPlayingMenu({
-                      track: currentTrack,
-                      x: e.clientX,
-                      y: e.clientY,
-                    });
-                  }}
-                  aria-label={`More options for ${currentTrack.title}`}
-                  className="min-w-[40px] min-h-[44px] flex items-center justify-center rounded-full text-white hover:bg-white/10 transition-colors"
-                >
-                  <MoreVertical size={21} />
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={(e) => {
+                  setNowPlayingMenu({
+                    track: currentTrack,
+                    x: e.clientX,
+                    y: e.clientY,
+                  });
+                }}
+                aria-label={`More options for ${currentTrack.title}`}
+                className="w-11 h-11 shrink-0 flex items-center justify-center rounded-full text-white hover:bg-white/10 transition-colors"
+              >
+                <MoreVertical size={21} />
+              </button>
+            </div>
+
+            <div className="flex justify-center mt-2.5">
+              <button
+                type="button"
+                onClick={() => openXoneDash(currentTrack)}
+                title="Play Xone Dash"
+                aria-label="Play Xone Dash"
+                className="inline-flex items-center gap-1.5 bg-white/[0.08] hover:bg-white/[0.14] active:scale-95 border border-white/10 text-zinc-100 rounded-full px-3.5 py-1.5 text-xs font-medium whitespace-nowrap transition-all"
+              >
+                <Gamepad2 size={14} className="shrink-0" />
+                <span>Xone Dash</span>
+              </button>
             </div>
           </div>
 
@@ -1491,6 +1487,17 @@ export const PlayerBar: React.FC = () => {
               NEXT READY
             </span>
           )}
+
+          <button
+            type="button"
+            disabled={!currentTrack}
+            onClick={() => currentTrack && openXoneDash(currentTrack)}
+            title="Play Xone Dash"
+            aria-label="Play Xone Dash"
+            className="p-1.5 text-[#B3B3B3] hover:text-[#FF5E4D] transition-colors disabled:opacity-40"
+          >
+            <Gamepad2 size={18} />
+          </button>
 
           <button
             type="button"

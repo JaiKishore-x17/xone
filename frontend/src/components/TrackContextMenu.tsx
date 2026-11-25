@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import {
   ChevronDown,
   ChevronRight,
+  Gamepad2,
   Heart,
   ListEnd,
   ListPlus,
@@ -64,6 +65,7 @@ export const TrackContextMenu: React.FC<TrackContextMenuProps> = ({
   const removeTrackFromPlaylist = usePlayerStore(
     (s) => s.removeTrackFromPlaylist
   );
+  const openXoneDash = usePlayerStore((s) => s.openXoneDash);
   const setNewPlaylistModalOpen = usePlayerStore(
     (s) => s.setNewPlaylistModalOpen
   );
@@ -325,6 +327,18 @@ export const TrackContextMenu: React.FC<TrackContextMenuProps> = ({
           </button>
         )}
 
+        <button
+          type="button"
+          onClick={() => {
+            openXoneDash(menu.track);
+            onClose();
+          }}
+          className="w-full px-3 py-2 flex items-center gap-2.5 hover:bg-white/10 text-left transition-colors"
+        >
+          <Gamepad2 size={15} className="text-[#FF5E4D]" />
+          <span>Play Xone Dash</span>
+        </button>
+
         <div className="my-1 border-t border-white/10" />
 
         <button
@@ -395,7 +409,19 @@ export const TrackContextMenu: React.FC<TrackContextMenuProps> = ({
                 <Plus size={14} />
                 <span>New playlist</span>
               </button>
-              <div className="my-1 border-t border-white/10" />
+              <button
+          type="button"
+          onClick={() => {
+            openXoneDash(menu.track);
+            onClose();
+          }}
+          className="w-full px-3 py-2 flex items-center gap-2.5 hover:bg-white/10 text-left transition-colors"
+        >
+          <Gamepad2 size={15} className="text-[#FF5E4D]" />
+          <span>Play Xone Dash</span>
+        </button>
+
+        <div className="my-1 border-t border-white/10" />
               {playlists.length === 0 ? (
                 <p className="px-3 py-2 text-xs text-[#A7A7A7]">No playlists yet</p>
               ) : (
@@ -419,7 +445,19 @@ export const TrackContextMenu: React.FC<TrackContextMenuProps> = ({
 
         {menu.playlistId !== undefined && (
           <>
-            <div className="my-1 border-t border-white/10" />
+            <button
+          type="button"
+          onClick={() => {
+            openXoneDash(menu.track);
+            onClose();
+          }}
+          className="w-full px-3 py-2 flex items-center gap-2.5 hover:bg-white/10 text-left transition-colors"
+        >
+          <Gamepad2 size={15} className="text-[#FF5E4D]" />
+          <span>Play Xone Dash</span>
+        </button>
+
+        <div className="my-1 border-t border-white/10" />
             <button
               type="button"
               onClick={() => {
@@ -537,6 +575,18 @@ export const TrackContextMenu: React.FC<TrackContextMenuProps> = ({
                 <span>Add to Jam Queue</span>
               </button>
             )}
+
+            <button
+              type="button"
+              onClick={() => {
+                openXoneDash(menu.track);
+                onClose();
+              }}
+              className="w-full min-h-[48px] px-3 rounded-lg flex items-center gap-3.5 hover:bg-[#1E1E1E] active:bg-[#1E1E1E] text-left transition-colors"
+            >
+              <Gamepad2 size={18} className="text-[#FF5E4D]" />
+              <span>Play Xone Dash</span>
+            </button>
 
             <button
               type="button"

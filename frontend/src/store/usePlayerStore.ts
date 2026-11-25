@@ -13,7 +13,14 @@ import {
   setMultiSpeakerMode as jamSetMultiSpeakerModeApi,
   setSpeakerDevices as jamSetSpeakersApi,
 } from "../services/xoneJam";
-import type { ActiveView, Playlist, RepeatMode, SearchResponse, Track } from "../types";
+import type {
+  ActiveView,
+  DashDifficulty,
+  Playlist,
+  RepeatMode,
+  SearchResponse,
+  Track,
+} from "../types";
 
 function syncNativeAudioEffects(eightD: boolean, slowedReverb: boolean): void {
   if (!Capacitor.isNativePlatform()) return;
@@ -22,7 +29,18 @@ function syncNativeAudioEffects(eightD: boolean, slowedReverb: boolean): void {
 
 const VOLUME_STORAGE_KEY = "xone_volume";
 const RECENT_SEARCHES_STORAGE_KEY = "xone_recent_searches";
+const DASH_DIFFICULTY_STORAGE_KEY = "xone_dash_difficulty";
 const MAX_RECENT_SEARCHES = 15;
+
+function readInitialDashDifficulty(): DashDifficulty {
+  try {
+    return localStorage.getItem(DASH_DIFFICULTY_STORAGE_KEY) === "raw"
+      ? "raw"
+      : "easy";
+  } catch {
+    return "easy";
+  }
+}
 
 function readInitialVolume(): number {
   try {
@@ -167,6 +185,8 @@ interface PlayerState {
   // Modal / UI Feedback
   isNewPlaylistModalOpen: boolean;
   addToPlaylistModalTrack: Track | null;
+  dashTrack: Track | null;
+  dashDifficulty: DashDifficulty;
   isJamModalOpen: boolean;
   isMobilePlayerExpanded: boolean;
   isKeyboardOpen: boolean;
@@ -231,6 +251,9 @@ interface PlayerState {
   setNewPlaylistModalOpen: (open: boolean) => void;
   openAddToPlaylistModal: (track: Track) => void;
   closeAddToPlaylistModal: () => void;
+  openXoneDash: (track?: Track) => void;
+  closeXoneDash: () => void;
+  setDashDifficulty: (difficulty: DashDifficulty) => void;
   setJamModalOpen: (open: boolean) => void;
   setMobilePlayerExpanded: (open: boolean) => void;
   setKeyboardOpen: (open: boolean) => void;
@@ -290,6 +313,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
   isNewPlaylistModalOpen: false,
   addToPlaylistModalTrack: null,
+  dashTrack: null,
+  dashDifficulty: readInitialDashDifficulty(),
   isJamModalOpen: false,
   isMobilePlayerExpanded: false,
   isKeyboardOpen: false,
@@ -310,6 +335,23 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   setNewPlaylistModalOpen: (open) => set({ isNewPlaylistModalOpen: open }),
   openAddToPlaylistModal: (track) => set({ addToPlaylistModalTrack: track }),
   closeAddToPlaylistModal: () => set({ addToPlaylistModalTrack: null }),
+  openXoneDash: (track) => {
+    const target = track ?? get().currentTrack;
+    if (!target) {
+      get().showToast("Select a track first");
+      return;
+    }
+    set({ dashTrack: target, isMobilePlayerExpanded: false });
+  },
+  closeXoneDash: () => set({ dashTrack: null }),
+  setDashDifficulty: (difficulty) => {
+    try {
+      localStorage.setItem(DASH_DIFFICULTY_STORAGE_KEY, difficulty);
+    } catch {
+      // ignore storage failures
+    }
+    set({ dashDifficulty: difficulty });
+  },
   setJamModalOpen: (open) => set({ isJamModalOpen: open }),
   setMobilePlayerExpanded: (open) => set({ isMobilePlayerExpanded: open }),
   setKeyboardOpen: (open) => set({ isKeyboardOpen: open }),

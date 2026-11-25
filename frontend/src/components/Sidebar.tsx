@@ -7,6 +7,7 @@ import {
   ListMusic,
   Plus,
   Search,
+  Settings,
   Trash2,
 } from "lucide-react";
 import { usePlayerStore } from "../store/usePlayerStore";
@@ -108,6 +109,25 @@ export const Sidebar: React.FC = () => {
               {queue.length}
             </span>
           )}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => navigate({ type: "settings" })}
+          className={`flex items-center gap-4 px-3 py-2.5 rounded-md font-semibold text-sm transition-colors relative ${
+            activeView.type === "settings"
+              ? "text-white bg-[#1E1E1E]/70"
+              : "text-[#B3B3B3] hover:text-white"
+          }`}
+        >
+          {activeView.type === "settings" && (
+            <span className="absolute left-0 top-2 bottom-2 w-1 rounded-r bg-[#FF5E4D]" />
+          )}
+          <Settings
+            size={21}
+            className={activeView.type === "settings" ? "text-[#FF5E4D]" : ""}
+          />
+          <span>Settings</span>
         </button>
       </div>
 

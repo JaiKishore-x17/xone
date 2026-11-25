@@ -625,6 +625,220 @@ class XoneAudioPlugin : Plugin() {
     }
 
     @PluginMethod
+    fun prepareDashAudio(call: PluginCall) {
+        val videoId = XonePlaybackService.sanitizeVideoId(call.getString("videoId"))
+        if (videoId.isEmpty()) {
+            call.reject("videoId is required")
+            return
+        }
+
+        pluginScope.launch(Dispatchers.IO) {
+            try {
+                val dashDir = File(context.cacheDir, XonePlaybackService.DASH_AUDIO_CACHE_DIR)
+                    .apply { mkdirs() }
+
+                // 1. Already cached in dash_audio
+                val existingDash = XonePlaybackService.findDashCachedAudioFile(context, videoId)
+                if (existingDash != null && existingDash.length() > 0L) {
+                    runCatching { existingDash.setLastModified(System.currentTimeMillis()) }
+                    emitDashPrepProgress(videoId, 100, "cached")
+                    call.resolve(
+                        JSObject().apply {
+                            put("localFilePath", existingDash.absolutePath)
+                            put("sizeBytes", existingDash.length())
+                            put("alreadyCached", true)
+                        }
+                    )
+                    return@launch
+                }
+
+                // 2. Copy from existing offline download (Music/Xone or legacy offline_tracks)
+                val existingOfflineUri = XonePlaybackService.findPublicOfflineTrackUri(context, videoId)
+                    ?: XonePlaybackService.findLegacyOfflineFile(context, videoId)?.let { Uri.fromFile(it) }
+
+                if (existingOfflineUri != null) {
+                    emitDashPrepProgress(videoId, 20, "copying")
+                    val tempFile = File(dashDir, "$videoId.audio.part")
+                    if (tempFile.exists()) tempFile.delete()
+                    val header = ByteArray(12)
+                    var headerLen = 0
+                    var copiedBytes = 0L
+
+                    val inputStream = if (existingOfflineUri.scheme == "file") {
+                        File(existingOfflineUri.path!!).inputStream()
+                    } else {
+                        context.contentResolver.openInputStream(existingOfflineUri)
+                    } ?: throw IOException("Unable to read offline track stream")
+
+                    inputStream.use { input ->
+                        FileOutputStream(tempFile).use { out ->
+                            val buf = ByteArray(64 * 1024)
+                            while (true) {
+                                val read = input.read(buf)
+                                if (read == -1) break
+                                if (headerLen < header.size) {
+                                    val take = minOf(read, header.size - headerLen)
+                                    System.arraycopy(buf, 0, header, headerLen, take)
+                                    headerLen += take
+                                }
+                                out.write(buf, 0, read)
+                                copiedBytes += read
+                            }
+                            out.flush()
+                        }
+                    }
+
+                    if (copiedBytes <= 0L) {
+                        tempFile.delete()
+                        throw IOException("Cached offline track is empty")
+                    }
+
+                    val ext = sniffDashExtension(header, headerLen)
+                    val targetFile = File(dashDir, "$videoId.$ext")
+                    if (targetFile.exists()) targetFile.delete()
+                    if (!tempFile.renameTo(targetFile)) {
+                        tempFile.copyTo(targetFile, overwrite = true)
+                        tempFile.delete()
+                    }
+                    pruneDashAudioCache(dashDir, targetFile.name)
+                    emitDashPrepProgress(videoId, 100, "cached")
+                    call.resolve(
+                        JSObject().apply {
+                            put("localFilePath", targetFile.absolutePath)
+                            put("sizeBytes", targetFile.length())
+                            put("alreadyCached", true)
+                        }
+                    )
+                    return@launch
+                }
+
+                // 3. Download full audio stream into dash_audio cache
+                emitDashPrepProgress(videoId, 5, "downloading")
+                val resolved = XoneExtractor.resolveAudioStream(videoId)
+                val ext = when {
+                    resolved.acodec == "aac" || resolved.mimeType.contains("mp4", ignoreCase = true) -> "m4a"
+                    resolved.mimeType.contains("webm", ignoreCase = true) -> "webm"
+                    else -> "ogg"
+                }
+
+                val tempFile = File(dashDir, "$videoId.$ext.part")
+                val targetFile = File(dashDir, "$videoId.$ext")
+                if (tempFile.exists()) tempFile.delete()
+
+                var lastEmitted = 5
+                val writtenBytes = try {
+                    FileOutputStream(tempFile).use { out ->
+                        val count = downloadStreamChunked(
+                            videoId = videoId,
+                            initialStreamUrl = resolved.streamUrl,
+                            onChunk = { chunk ->
+                                out.write(chunk)
+                                out.flush()
+                            },
+                            onProgress = { pct ->
+                                val scaled = pct.coerceIn(5, 98)
+                                if (scaled > lastEmitted) {
+                                    lastEmitted = scaled
+                                    emitDashPrepProgress(videoId, scaled, "downloading")
+                                }
+                            }
+                        )
+                        out.fd.sync()
+                        count
+                    }
+                } catch (ex: Exception) {
+                    if (tempFile.exists()) tempFile.delete()
+                    throw ex
+                }
+
+                if (writtenBytes <= 0L || !tempFile.exists() || tempFile.length() <= 0L) {
+                    if (tempFile.exists()) tempFile.delete()
+                    throw IOException("Downloaded Dash audio stream is empty")
+                }
+
+                if (targetFile.exists()) targetFile.delete()
+                if (!tempFile.renameTo(targetFile)) {
+                    tempFile.copyTo(targetFile, overwrite = true)
+                    tempFile.delete()
+                }
+                pruneDashAudioCache(dashDir, targetFile.name)
+                emitDashPrepProgress(videoId, 100, "cached")
+
+                call.resolve(
+                    JSObject().apply {
+                        put("localFilePath", targetFile.absolutePath)
+                        put("sizeBytes", targetFile.length())
+                        put("alreadyCached", false)
+                    }
+                )
+            } catch (ex: Exception) {
+                call.reject(ex.localizedMessage ?: "Failed to cache audio for Xone Dash", ex)
+            }
+        }
+    }
+
+    private fun emitDashPrepProgress(videoId: String, progress: Int, stage: String) {
+        val payload = JSObject().apply {
+            put("videoId", videoId)
+            put("progress", progress)
+            put("stage", stage)
+        }
+        notifyListeners("dashPrepProgress", payload)
+    }
+
+    private fun sniffDashExtension(header: ByteArray, len: Int): String {
+        if (len >= 8 &&
+            header[4] == 'f'.code.toByte() &&
+            header[5] == 't'.code.toByte() &&
+            header[6] == 'y'.code.toByte() &&
+            header[7] == 'p'.code.toByte()
+        ) {
+            return "m4a"
+        }
+        if (len >= 4 &&
+            header[0] == 0x1A.toByte() &&
+            header[1] == 0x45.toByte() &&
+            header[2] == 0xDF.toByte() &&
+            header[3] == 0xA3.toByte()
+        ) {
+            return "webm"
+        }
+        if (len >= 4 &&
+            header[0] == 'O'.code.toByte() &&
+            header[1] == 'g'.code.toByte() &&
+            header[2] == 'g'.toByte() &&
+            header[3] == 'S'.code.toByte()
+        ) {
+            return "ogg"
+        }
+        if (len >= 3 &&
+            header[0] == 'I'.code.toByte() &&
+            header[1] == 'D'.code.toByte() &&
+            header[2] == '3'.code.toByte()
+        ) {
+            return "mp3"
+        }
+        return "m4a"
+    }
+
+    private fun pruneDashAudioCache(dashDir: File, keepFileName: String) {
+        val files = dashDir.listFiles()?.filter { it.isFile && !it.name.endsWith(".part") } ?: return
+        var totalSize = files.sumOf { it.length() }
+        val maxBytes = 64L * 1024L * 1024L
+        if (totalSize <= maxBytes && files.size <= 10) return
+        val sortedOldest = files.filter { it.name != keepFileName }.sortedBy { it.lastModified() }
+        var remaining = files.size
+        for (file in sortedOldest) {
+            if (totalSize <= maxBytes && remaining <= 10) break
+            val len = file.length()
+            if (file.delete()) {
+                totalSize -= len
+                remaining -= 1
+            }
+        }
+    }
+
+    @PluginMethod
     fun deleteDownload(call: PluginCall) {
         val videoId = XonePlaybackService.sanitizeVideoId(call.getString("videoId"))
         if (videoId.isEmpty()) {
@@ -1227,7 +1441,8 @@ class XoneAudioPlugin : Plugin() {
     private suspend fun downloadStreamChunked(
         videoId: String,
         initialStreamUrl: String,
-        onChunk: (ByteArray) -> Unit
+        onChunk: (ByteArray) -> Unit,
+        onProgress: ((Int) -> Unit)? = null
     ): Long {
         var currentStreamUrl = initialStreamUrl
         var downloadedBytes = 0L
@@ -1294,6 +1509,11 @@ class XoneAudioPlugin : Plugin() {
                     onChunk(chunkBytes)
                     downloadedBytes += chunkBytes.size.toLong()
                     chunkWritten = true
+
+                    if (totalBytes > 0L) {
+                        val pct = ((downloadedBytes * 100L) / totalBytes).toInt().coerceIn(0, 100)
+                        onProgress?.invoke(pct)
+                    }
 
                     if (responseCode == 200 && totalBytes <= 0L) {
                         totalBytes = downloadedBytes

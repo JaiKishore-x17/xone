@@ -23,6 +23,12 @@ export interface AppUpdaterPlugin {
   downloadAndInstallApk(options: {
     url: string;
   }): Promise<DownloadAndInstallResult>;
+  setScreenOrientation(options: {
+    orientation: "landscape" | "portrait" | "unspecified";
+  }): Promise<{ applied: boolean; orientation: string }>;
+  setImmersiveMode(options: {
+    enabled: boolean;
+  }): Promise<{ applied: boolean; enabled: boolean }>;
   addListener(
     eventName: "downloadProgress",
     listenerFunc: (event: ApkDownloadProgressEvent) => void

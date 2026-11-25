@@ -1,11 +1,16 @@
 package com.xone.music
 
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import android.view.WindowManager
 import androidx.core.content.FileProvider
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import com.getcapacitor.JSObject
 import com.getcapacitor.Plugin
 import com.getcapacitor.PluginCall
@@ -208,6 +213,81 @@ class AppUpdaterPlugin : Plugin() {
                 call.reject(e.message ?: "Failed to download and install update", e)
             } finally {
                 isDownloading.set(false)
+            }
+        }
+    }
+
+    @PluginMethod
+    fun setScreenOrientation(call: PluginCall) {
+        val orientation = call.getString("orientation")?.trim()?.lowercase() ?: "unspecified"
+        val hostActivity = activity
+        if (hostActivity == null) {
+            call.reject("Activity unavailable")
+            return
+        }
+
+        val targetMode = when (orientation) {
+            "landscape" -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            "portrait" -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            else -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        }
+
+        hostActivity.runOnUiThread {
+            try {
+                hostActivity.requestedOrientation = targetMode
+                call.resolve(
+                    JSObject().apply {
+                        put("applied", true)
+                        put("orientation", orientation)
+                    }
+                )
+            } catch (e: Exception) {
+                call.reject("Failed to set screen orientation", e)
+            }
+        }
+    }
+
+    @PluginMethod
+    fun setImmersiveMode(call: PluginCall) {
+        val enabled = call.getBoolean("enabled") ?: false
+        val hostActivity = activity
+        if (hostActivity == null) {
+            call.reject("Activity unavailable")
+            return
+        }
+
+        hostActivity.runOnUiThread {
+            try {
+                val window = hostActivity.window
+                if (window != null) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                        val lp = window.attributes
+                        lp.layoutInDisplayCutoutMode =
+                            WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+                        window.attributes = lp
+                    }
+
+                    WindowCompat.setDecorFitsSystemWindows(window, !enabled)
+                    val controller = WindowInsetsControllerCompat(window, window.decorView)
+                    if (enabled) {
+                        controller.systemBarsBehavior =
+                            WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                        controller.hide(WindowInsetsCompat.Type.systemBars())
+                    } else {
+                        controller.show(WindowInsetsCompat.Type.systemBars())
+                        controller.isAppearanceLightStatusBars = false
+                        controller.isAppearanceLightNavigationBars = false
+                    }
+                }
+
+                call.resolve(
+                    JSObject().apply {
+                        put("applied", true)
+                        put("enabled", enabled)
+                    }
+                )
+            } catch (e: Exception) {
+                call.reject("Failed to set immersive mode", e)
             }
         }
     }

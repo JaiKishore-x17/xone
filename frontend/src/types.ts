@@ -47,10 +47,13 @@ export interface StreamInfo {
 
 export type RepeatMode = "off" | "all" | "one";
 
+export type DashDifficulty = "easy" | "raw";
+
 export type ActiveView =
   | { type: "home" }
   | { type: "search" }
   | { type: "library" }
+  | { type: "settings" }
   | { type: "likes" }
   | { type: "downloads" }
   | { type: "playlist"; playlistId: number }

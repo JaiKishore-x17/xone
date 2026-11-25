@@ -23,6 +23,7 @@ import {
 import { usePlayerStore } from "../store/usePlayerStore";
 import { formatTotalDuration, getTimeGreeting } from "../utils/format";
 import { SwipeableTrackRow } from "./SwipeableTrackRow";
+import { SettingsPage } from "./SettingsPage";
 import { dismissSearchKeyboard, searchInputRef } from "./TopBar";
 import { TrackArtwork } from "./TrackArtwork";
 import { TrackContextMenu, type ContextMenuState } from "./TrackContextMenu";
@@ -1352,6 +1353,11 @@ export const MainView: React.FC = () => {
         />
       </div>
     );
+  }
+
+  // ===================== SETTINGS VIEW =====================
+  if (activeView.type === "settings") {
+    return <SettingsPage scrollRef={mainScrollRef} />;
   }
 
   // ===================== QUEUE VIEW =====================

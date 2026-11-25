@@ -20,6 +20,12 @@ export interface NativePlaybackStateEvent {
   currentTrack?: Track | null;
 }
 
+export interface NativeDashPrepProgressEvent {
+  videoId: string;
+  progress: number;
+  stage: string;
+}
+
 export interface XoneAudioPlugin {
   playTrack(
     options: NativeTrackPayload
@@ -42,6 +48,9 @@ export interface XoneAudioPlugin {
     title?: string;
     artist?: string;
   }): Promise<{ localPath: string; sizeBytes: number }>;
+  prepareDashAudio(options: {
+    videoId: string;
+  }): Promise<{ localFilePath: string; sizeBytes: number; alreadyCached: boolean }>;
   deleteDownload(options: {
     videoId: string;
   }): Promise<{ deleted?: boolean; videoId?: string }>;
@@ -55,6 +64,10 @@ export interface XoneAudioPlugin {
   addListener(
     eventName: "playbackState",
     listenerFunc: (event: NativePlaybackStateEvent) => void
+  ): Promise<PluginListenerHandle>;
+  addListener(
+    eventName: "dashPrepProgress",
+    listenerFunc: (event: NativeDashPrepProgressEvent) => void
   ): Promise<PluginListenerHandle>;
 }
 
