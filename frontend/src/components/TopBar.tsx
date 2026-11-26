@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef } from "react";
 import { Capacitor, registerPlugin } from "@capacitor/core";
 import {
   ChevronLeft,
@@ -49,10 +49,11 @@ export const TopBar: React.FC = () => {
   const setSearchQuery = usePlayerStore((s) => s.setSearchQuery);
   const runSearch = usePlayerStore((s) => s.runSearch);
   const setJamModalOpen = usePlayerStore((s) => s.setJamModalOpen);
+  const isAboutOpen = usePlayerStore((s) => s.isAboutModalOpen);
+  const setIsAboutOpen = usePlayerStore((s) => s.setAboutModalOpen);
 
   const debounceRef = useRef<number | null>(null);
   const lastSearchedRef = useRef<string>("");
-  const [isAboutOpen, setIsAboutOpen] = useState(false);
 
   // 350ms debounced instant search
   useEffect(() => {

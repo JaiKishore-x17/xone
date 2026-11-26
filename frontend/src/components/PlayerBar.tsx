@@ -257,12 +257,13 @@ export const PlayerBar: React.FC = () => {
   const navigate = usePlayerStore((s) => s.navigate);
   const isMobileExpanded = usePlayerStore((s) => s.isMobilePlayerExpanded);
   const setIsMobileExpanded = usePlayerStore((s) => s.setMobilePlayerExpanded);
+  const isLyricsOpen = usePlayerStore((s) => s.isLyricsOpen);
+  const setIsLyricsOpen = usePlayerStore((s) => s.setLyricsOpen);
 
   const [nowPlayingMenu, setNowPlayingMenu] = useState<ContextMenuState | null>(
     null
   );
   const [npEntered, setNpEntered] = useState(false);
-  const [isLyricsOpen, setIsLyricsOpen] = useState(false);
 
   const volumeBarRef = useRef<HTMLDivElement | null>(null);
   const miniBarRef = useRef<HTMLDivElement | null>(null);
@@ -313,7 +314,7 @@ export const PlayerBar: React.FC = () => {
       setNowPlayingMenu(null);
       setIsLyricsOpen(false);
     }
-  }, [currentTrack, setIsMobileExpanded]);
+  }, [currentTrack, setIsLyricsOpen, setIsMobileExpanded]);
 
   useLayoutEffect(() => {
     if (npTrackAnimTimerRef.current !== null) {
@@ -1256,7 +1257,7 @@ export const PlayerBar: React.FC = () => {
               <div className="flex items-center gap-0.5">
                 <button
                   type="button"
-                  onClick={() => setIsLyricsOpen((v) => !v)}
+                  onClick={() => setIsLyricsOpen(!isLyricsOpen)}
                   aria-pressed={isLyricsOpen}
                   aria-label="Toggle Lyrics"
                   className={`min-h-[44px] px-2.5 flex items-center gap-1.5 text-xs font-semibold rounded-full transition-colors ${
@@ -1502,7 +1503,7 @@ export const PlayerBar: React.FC = () => {
           <button
             type="button"
             disabled={!currentTrack}
-            onClick={() => setIsLyricsOpen((v) => !v)}
+            onClick={() => setIsLyricsOpen(!isLyricsOpen)}
             title="Lyrics"
             aria-pressed={isLyricsOpen}
             aria-label="Toggle Lyrics"

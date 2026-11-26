@@ -3,7 +3,6 @@ This repository is split into two active branches maintained separately:
 1. **`main` (Production):** Clean, stable signed release build (`v1.2.1+`). Must NEVER contain Xone Dash game code, `SettingsPage.tsx` game toggles, or experimental game dependencies.
 2. **`exp/xone-dash` (Experimental):** Contains the Xone Dash beat-synced canvas game, Easy/Raw difficulty settings, and experimental features published as GitHub Pre-releases.
 
-3. **`exp/xone-wave` (Experimental):**should Contain the Xone wave beat-synced (currently working on it).
 
 ### Rules for Every Task:
 - Always check `git branch --show-current` before modifying files or suggesting git commands.

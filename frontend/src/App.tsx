@@ -1,4 +1,5 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { App as CapacitorApp } from "@capacitor/app";
 import { Capacitor, registerPlugin, type PluginListenerHandle } from "@capacitor/core";
 import { AddToPlaylistModal } from "./components/AddToPlaylistModal";
 import { AudioEngine } from "./components/AudioEngine";
@@ -8,7 +9,7 @@ import { MobileBottomNav } from "./components/MobileBottomNav";
 import { NewPlaylistModal } from "./components/NewPlaylistModal";
 import { PlayerBar } from "./components/PlayerBar";
 import { Sidebar } from "./components/Sidebar";
-import { TopBar } from "./components/TopBar";
+import { dismissSearchKeyboard, TopBar } from "./components/TopBar";
 import { UpdateChecker } from "./components/UpdateChecker";
 import { XoneWaveModal } from "./components/XoneWaveGame";
 import { usePlayerStore } from "./store/usePlayerStore";
@@ -43,6 +44,8 @@ export const App: React.FC = () => {
   const isMobilePlayerExpanded = usePlayerStore((s) => s.isMobilePlayerExpanded);
   const isNewPlaylistModalOpen = usePlayerStore((s) => s.isNewPlaylistModalOpen);
   const addToPlaylistModalTrack = usePlayerStore((s) => s.addToPlaylistModalTrack);
+  const isLyricsOpen = usePlayerStore((s) => s.isLyricsOpen);
+  const isAboutModalOpen = usePlayerStore((s) => s.isAboutModalOpen);
   const waveTrack = usePlayerStore((s) => s.waveTrack);
   const navigate = usePlayerStore((s) => s.navigate);
   const setKeyboardOpen = usePlayerStore((s) => s.setKeyboardOpen);
@@ -50,6 +53,9 @@ export const App: React.FC = () => {
   const currentTabIndex = getTabIndex(activeView);
   const prevTabIndexRef = useRef<number>(currentTabIndex);
   const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
+  const lastBackPressTimeRef = useRef<number>(0);
+  const exitToastTimerRef = useRef<number | null>(null);
+  const [exitToastVisible, setExitToastVisible] = useState(false);
   const [tabTransition, setTabTransition] = useState<
     "idle" | "from-right" | "from-left"
   >("idle");
@@ -57,6 +63,142 @@ export const App: React.FC = () => {
   useEffect(() => {
     void fetchLibrary();
   }, [fetchLibrary]);
+
+  // Clear pending double-back exit confirmation whenever leaving root Home or opening any overlay
+  useEffect(() => {
+    if (
+      activeView.type !== "home" ||
+      waveTrack ||
+      isMobilePlayerExpanded ||
+      isLyricsOpen ||
+      isJamModalOpen ||
+      isNewPlaylistModalOpen ||
+      addToPlaylistModalTrack ||
+      isAboutModalOpen
+    ) {
+      lastBackPressTimeRef.current = 0;
+      setExitToastVisible(false);
+      if (exitToastTimerRef.current !== null) {
+        window.clearTimeout(exitToastTimerRef.current);
+        exitToastTimerRef.current = null;
+      }
+    }
+  }, [
+    activeView.type,
+    addToPlaylistModalTrack,
+    isAboutModalOpen,
+    isJamModalOpen,
+    isLyricsOpen,
+    isMobilePlayerExpanded,
+    isNewPlaylistModalOpen,
+    waveTrack,
+  ]);
+
+  // Android hardware / edge-gesture back-button priority stack + double-back to exit
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+
+    let mounted = true;
+    const listenerHandlePromise = CapacitorApp.addListener("backButton", () => {
+      if (!mounted) return;
+      const state = usePlayerStore.getState();
+
+      // 1. Xone Wave Game
+      if (state.waveTrack !== null) {
+        state.closeXoneWave();
+        return;
+      }
+
+      // 2. Context menu / Modals / Lyrics / Full-screen Now Playing sheet
+      if (document.body.dataset.xoneContextMenuOpen === "true") {
+        window.dispatchEvent(new CustomEvent("xone:dismiss-menus"));
+        return;
+      }
+      if (state.isNewPlaylistModalOpen) {
+        state.setNewPlaylistModalOpen(false);
+        return;
+      }
+      if (state.addToPlaylistModalTrack !== null) {
+        state.closeAddToPlaylistModal();
+        return;
+      }
+      if (state.isJamModalOpen) {
+        state.setJamModalOpen(false);
+        return;
+      }
+      if (state.isAboutModalOpen) {
+        state.setAboutModalOpen(false);
+        return;
+      }
+      if (state.isLyricsOpen) {
+        state.setLyricsOpen(false);
+        return;
+      }
+      if (state.isMobilePlayerExpanded) {
+        state.setMobilePlayerExpanded(false);
+        return;
+      }
+
+      // 3. In-app views & tabs (Playlist/Likes/Downloads -> Library, Queue -> previous, Search/Library -> Home)
+      if (
+        state.activeView.type === "playlist" ||
+        state.activeView.type === "likes" ||
+        state.activeView.type === "downloads"
+      ) {
+        state.navigate({ type: "library" });
+        return;
+      }
+      if (state.activeView.type === "queue") {
+        const prevView =
+          state.historyIndex > 0 ? state.history[state.historyIndex - 1] : null;
+        if (prevView && prevView.type !== "queue") {
+          state.goBack();
+        } else {
+          state.navigate({ type: "home" });
+        }
+        return;
+      }
+      if (state.activeView.type !== "home") {
+        dismissSearchKeyboard();
+        state.navigate({ type: "home" });
+        return;
+      }
+
+      // 4. Root Home screen: Double-back within 2000ms to exit cleanly
+      const now = Date.now();
+      if (now - lastBackPressTimeRef.current < 2000) {
+        if (exitToastTimerRef.current !== null) {
+          window.clearTimeout(exitToastTimerRef.current);
+          exitToastTimerRef.current = null;
+        }
+        lastBackPressTimeRef.current = 0;
+        setExitToastVisible(false);
+        void CapacitorApp.exitApp();
+        return;
+      }
+
+      lastBackPressTimeRef.current = now;
+      setExitToastVisible(true);
+      if (exitToastTimerRef.current !== null) {
+        window.clearTimeout(exitToastTimerRef.current);
+      }
+      exitToastTimerRef.current = window.setTimeout(() => {
+        exitToastTimerRef.current = null;
+        if (mounted) {
+          setExitToastVisible(false);
+        }
+      }, 2000);
+    });
+
+    return () => {
+      mounted = false;
+      if (exitToastTimerRef.current !== null) {
+        window.clearTimeout(exitToastTimerRef.current);
+        exitToastTimerRef.current = null;
+      }
+      void listenerHandlePromise.then((h) => h.remove()).catch(() => {});
+    };
+  }, []);
 
   // Detect soft keyboard visibility via Capacitor Keyboard events + visualViewport height fallback
   useEffect(() => {
@@ -310,6 +452,16 @@ export const App: React.FC = () => {
       {toastMessage && (
         <div className="fixed bottom-[calc(8rem+env(safe-area-inset-bottom))] md:bottom-28 left-1/2 -translate-x-1/2 z-50 px-5 py-2.5 rounded-full bg-[#FF5E4D] text-black text-xs font-bold shadow-2xl pointer-events-none whitespace-nowrap max-w-[90vw] truncate">
           {toastMessage}
+        </div>
+      )}
+
+      {exitToastVisible && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed bottom-[calc(5.25rem+env(safe-area-inset-bottom))] md:bottom-10 left-1/2 -translate-x-1/2 z-[120] px-4 py-2 rounded-full bg-zinc-900/85 backdrop-blur-md border border-white/15 text-zinc-100 text-xs font-medium shadow-2xl pointer-events-none whitespace-nowrap"
+        >
+          Press back again to exit
         </div>
       )}
     </div>

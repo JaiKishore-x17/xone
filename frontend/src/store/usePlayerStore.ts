@@ -170,6 +170,8 @@ interface PlayerState {
   waveTrack: Track | null;
   isJamModalOpen: boolean;
   isMobilePlayerExpanded: boolean;
+  isLyricsOpen: boolean;
+  isAboutModalOpen: boolean;
   isKeyboardOpen: boolean;
   isJamBusy: boolean;
   jamState: JamState;
@@ -236,6 +238,8 @@ interface PlayerState {
   closeXoneWave: () => void;
   setJamModalOpen: (open: boolean) => void;
   setMobilePlayerExpanded: (open: boolean) => void;
+  setLyricsOpen: (open: boolean) => void;
+  setAboutModalOpen: (open: boolean) => void;
   setKeyboardOpen: (open: boolean) => void;
   setJamState: (state: JamState) => void;
   startJamSession: (deviceName?: string) => Promise<void>;
@@ -296,6 +300,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   waveTrack: null,
   isJamModalOpen: false,
   isMobilePlayerExpanded: false,
+  isLyricsOpen: false,
+  isAboutModalOpen: false,
   isKeyboardOpen: false,
   isJamBusy: false,
   jamState: EMPTY_JAM_STATE,
@@ -320,11 +326,17 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       get().showToast("Select a track first");
       return;
     }
-    set({ waveTrack: target, isMobilePlayerExpanded: false });
+    set({
+      waveTrack: target,
+      isMobilePlayerExpanded: false,
+      isLyricsOpen: false,
+    });
   },
   closeXoneWave: () => set({ waveTrack: null }),
   setJamModalOpen: (open) => set({ isJamModalOpen: open }),
   setMobilePlayerExpanded: (open) => set({ isMobilePlayerExpanded: open }),
+  setLyricsOpen: (open) => set({ isLyricsOpen: open }),
+  setAboutModalOpen: (open) => set({ isAboutModalOpen: open }),
   setKeyboardOpen: (open) => set({ isKeyboardOpen: open }),
   setJamState: (jamState) => {
     const isActive = Boolean(jamState.active || jamState.isActive);

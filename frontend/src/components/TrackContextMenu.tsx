@@ -123,6 +123,7 @@ export const TrackContextMenu: React.FC<TrackContextMenuProps> = ({
 
   useEffect(() => {
     if (!menu) return;
+    document.body.dataset.xoneContextMenuOpen = "true";
     const handleOutside = (e: MouseEvent) => {
       const target = e.target as Node;
       const inDesktopMenu = menuRef.current?.contains(target);
@@ -134,11 +135,17 @@ export const TrackContextMenu: React.FC<TrackContextMenuProps> = ({
     const handleEsc = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
+    const handleDismissMenus = () => {
+      onClose();
+    };
     window.addEventListener("mousedown", handleOutside);
     window.addEventListener("keydown", handleEsc);
+    window.addEventListener("xone:dismiss-menus", handleDismissMenus);
     return () => {
+      delete document.body.dataset.xoneContextMenuOpen;
       window.removeEventListener("mousedown", handleOutside);
       window.removeEventListener("keydown", handleEsc);
+      window.removeEventListener("xone:dismiss-menus", handleDismissMenus);
     };
   }, [menu, onClose]);
 
