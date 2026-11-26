@@ -439,6 +439,7 @@ class XonePlaybackService : MediaSessionService() {
         const val XONE_SCHEME = "xone"
         const val OFFLINE_PUBLIC_SUBDIR = "Xone"
         const val LEGACY_OFFLINE_DIR = "offline_tracks"
+        const val WAVE_AUDIO_CACHE_DIR = "wave_audio"
         private val VIDEO_ID_SANITIZE_REGEX = Regex("[^a-zA-Z0-9_-]")
 
         fun sanitizeVideoId(raw: String?): String {
@@ -530,9 +531,21 @@ class XonePlaybackService : MediaSessionService() {
             return null
         }
 
+        fun findWaveCachedAudioFile(context: Context, rawVideoId: String): File? {
+            val videoId = sanitizeVideoId(rawVideoId)
+            if (videoId.isEmpty()) return null
+            val waveDir = File(context.cacheDir, WAVE_AUDIO_CACHE_DIR)
+            val m4aFile = File(waveDir, "$videoId.m4a")
+            if (m4aFile.exists() && m4aFile.length() > 0L) return m4aFile
+            val opusFile = File(waveDir, "$videoId.opus")
+            if (opusFile.exists() && opusFile.length() > 0L) return opusFile
+            return null
+        }
+
         fun findOfflineTrackUri(context: Context, rawVideoId: String): Uri? {
             return findPublicOfflineTrackUri(context, rawVideoId)
                 ?: findLegacyOfflineFile(context, rawVideoId)?.let { Uri.fromFile(it) }
+                ?: findWaveCachedAudioFile(context, rawVideoId)?.let { Uri.fromFile(it) }
         }
 
         fun getOfflineUriSize(context: Context, uri: Uri): Long {

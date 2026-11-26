@@ -83,7 +83,12 @@ const NativeAudioController: React.FC = () => {
         store.setPlaybackError(event.error);
       }
 
-      if (event.ended && store.currentTrack && !store.jamState.active) {
+      if (
+        event.ended &&
+        store.currentTrack &&
+        !store.jamState.active &&
+        !store.waveTrack
+      ) {
         const endKey = `${store.currentTrack.video_id}:${store.queueIndex}`;
         if (handledEndedTrackRef.current !== endKey) {
           handledEndedTrackRef.current = endKey;
@@ -559,7 +564,9 @@ const WebAudioController: React.FC = () => {
   };
 
   const handleEnded = () => {
-    usePlayerStore.getState().playNextTrack(true);
+    const store = usePlayerStore.getState();
+    if (store.waveTrack) return;
+    store.playNextTrack(true);
   };
 
   const handleAudioError = async () => {

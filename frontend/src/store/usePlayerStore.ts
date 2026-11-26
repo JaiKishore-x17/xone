@@ -167,6 +167,7 @@ interface PlayerState {
   // Modal / UI Feedback
   isNewPlaylistModalOpen: boolean;
   addToPlaylistModalTrack: Track | null;
+  waveTrack: Track | null;
   isJamModalOpen: boolean;
   isMobilePlayerExpanded: boolean;
   isKeyboardOpen: boolean;
@@ -231,6 +232,8 @@ interface PlayerState {
   setNewPlaylistModalOpen: (open: boolean) => void;
   openAddToPlaylistModal: (track: Track) => void;
   closeAddToPlaylistModal: () => void;
+  openXoneWave: (track?: Track) => void;
+  closeXoneWave: () => void;
   setJamModalOpen: (open: boolean) => void;
   setMobilePlayerExpanded: (open: boolean) => void;
   setKeyboardOpen: (open: boolean) => void;
@@ -290,6 +293,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
   isNewPlaylistModalOpen: false,
   addToPlaylistModalTrack: null,
+  waveTrack: null,
   isJamModalOpen: false,
   isMobilePlayerExpanded: false,
   isKeyboardOpen: false,
@@ -310,6 +314,15 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   setNewPlaylistModalOpen: (open) => set({ isNewPlaylistModalOpen: open }),
   openAddToPlaylistModal: (track) => set({ addToPlaylistModalTrack: track }),
   closeAddToPlaylistModal: () => set({ addToPlaylistModalTrack: null }),
+  openXoneWave: (track) => {
+    const target = track ?? get().currentTrack;
+    if (!target) {
+      get().showToast("Select a track first");
+      return;
+    }
+    set({ waveTrack: target, isMobilePlayerExpanded: false });
+  },
+  closeXoneWave: () => set({ waveTrack: null }),
   setJamModalOpen: (open) => set({ isJamModalOpen: open }),
   setMobilePlayerExpanded: (open) => set({ isMobilePlayerExpanded: open }),
   setKeyboardOpen: (open) => set({ isKeyboardOpen: open }),

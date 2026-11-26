@@ -10,6 +10,7 @@ import { PlayerBar } from "./components/PlayerBar";
 import { Sidebar } from "./components/Sidebar";
 import { TopBar } from "./components/TopBar";
 import { UpdateChecker } from "./components/UpdateChecker";
+import { XoneWaveModal } from "./components/XoneWaveGame";
 import { usePlayerStore } from "./store/usePlayerStore";
 import type { ActiveView } from "./types";
 
@@ -42,6 +43,7 @@ export const App: React.FC = () => {
   const isMobilePlayerExpanded = usePlayerStore((s) => s.isMobilePlayerExpanded);
   const isNewPlaylistModalOpen = usePlayerStore((s) => s.isNewPlaylistModalOpen);
   const addToPlaylistModalTrack = usePlayerStore((s) => s.addToPlaylistModalTrack);
+  const waveTrack = usePlayerStore((s) => s.waveTrack);
   const navigate = usePlayerStore((s) => s.navigate);
   const setKeyboardOpen = usePlayerStore((s) => s.setKeyboardOpen);
 
@@ -215,6 +217,7 @@ export const App: React.FC = () => {
     isMobilePlayerExpanded ||
     isNewPlaylistModalOpen ||
     Boolean(addToPlaylistModalTrack) ||
+    Boolean(waveTrack) ||
     isJamModalOpen ||
     Boolean(document.querySelector('[role="dialog"]'));
 
@@ -260,8 +263,12 @@ export const App: React.FC = () => {
       {/* Headless audio controller, standby 15s prefetcher, MediaSession & shortcuts */}
       <AudioEngine />
 
-      {/* Main 2-column workspace */}
-      <div className="flex-1 min-h-0 flex gap-0 md:gap-2 p-0 md:p-2 md:pb-0 overflow-x-hidden">
+      {/* Main 2-column workspace (hidden while Xone Wave is active to pause background UI compositing) */}
+      <div
+        className={`flex-1 min-h-0 flex gap-0 md:gap-2 p-0 md:p-2 md:pb-0 overflow-x-hidden ${
+          waveTrack ? "hidden" : ""
+        }`}
+      >
         <Sidebar />
 
         <main
@@ -291,13 +298,14 @@ export const App: React.FC = () => {
       <PlayerBar />
 
       {/* Fixed mobile bottom navigation */}
-      <MobileBottomNav />
+      {!waveTrack && <MobileBottomNav />}
 
       {/* Modals & Toast */}
       <NewPlaylistModal />
       <AddToPlaylistModal />
       <JamModal />
       <UpdateChecker />
+      <XoneWaveModal />
 
       {toastMessage && (
         <div className="fixed bottom-[calc(8rem+env(safe-area-inset-bottom))] md:bottom-28 left-1/2 -translate-x-1/2 z-50 px-5 py-2.5 rounded-full bg-[#FF5E4D] text-black text-xs font-bold shadow-2xl pointer-events-none whitespace-nowrap max-w-[90vw] truncate">

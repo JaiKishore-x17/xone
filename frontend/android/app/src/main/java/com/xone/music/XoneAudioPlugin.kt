@@ -540,6 +540,133 @@ class XoneAudioPlugin : Plugin() {
     }
 
     @PluginMethod
+    fun prepareWaveAudio(call: PluginCall) {
+        val videoId = XonePlaybackService.sanitizeVideoId(call.getString("videoId"))
+        if (videoId.isEmpty()) {
+            call.reject("videoId is required")
+            return
+        }
+
+        pluginScope.launch(Dispatchers.IO) {
+            try {
+                val existingWave = XonePlaybackService.findWaveCachedAudioFile(context, videoId)
+                if (existingWave != null) {
+                    emitWavePrepProgress(videoId, 100, "cached")
+                    call.resolve(
+                        JSObject().apply {
+                            put("localFilePath", existingWave.absolutePath)
+                            put("cached", true)
+                        }
+                    )
+                    return@launch
+                }
+
+                val waveDir = File(context.cacheDir, XonePlaybackService.WAVE_AUDIO_CACHE_DIR).apply {
+                    if (!exists()) mkdirs()
+                }
+
+                // Copy from already-downloaded offline track if available
+                val offlineUri = XonePlaybackService.findOfflineTrackUri(context, videoId)
+                if (offlineUri != null) {
+                    val ext = if (offlineUri.toString().contains("opus", ignoreCase = true)) {
+                        "opus"
+                    } else {
+                        "m4a"
+                    }
+                    val targetFile = File(waveDir, "$videoId.$ext")
+                    val tempFile = File(waveDir, "$videoId.$ext.part")
+                    try {
+                        if (tempFile.exists()) tempFile.delete()
+                        context.contentResolver.openInputStream(offlineUri)?.use { input ->
+                            FileOutputStream(tempFile).use { output ->
+                                input.copyTo(output, 64 * 1024)
+                                output.flush()
+                            }
+                        } ?: throw IOException("Unable to open offline audio stream")
+
+                        if (tempFile.length() > 0L) {
+                            if (targetFile.exists()) targetFile.delete()
+                            if (!tempFile.renameTo(targetFile)) {
+                                tempFile.copyTo(targetFile, overwrite = true)
+                                tempFile.delete()
+                            }
+                            emitWavePrepProgress(videoId, 100, "cached")
+                            call.resolve(
+                                JSObject().apply {
+                                    put("localFilePath", targetFile.absolutePath)
+                                    put("cached", true)
+                                }
+                            )
+                            return@launch
+                        }
+                    } catch (_: Exception) {
+                        if (tempFile.exists()) tempFile.delete()
+                    }
+                }
+
+                val resolved = XoneExtractor.resolveAudioStream(videoId)
+                val (ext, _) = resolveContainerFormat(resolved)
+                val targetFile = File(waveDir, "$videoId.$ext")
+                val tempFile = File(waveDir, "$videoId.$ext.part")
+                if (tempFile.exists()) tempFile.delete()
+
+                emitWavePrepProgress(videoId, 5, "downloading")
+                var lastPct = 5
+
+                FileOutputStream(tempFile).use { out ->
+                    downloadStreamChunked(
+                        videoId = videoId,
+                        initialStreamUrl = resolved.streamUrl,
+                        onChunk = { chunk -> out.write(chunk) },
+                        onProgress = { downloaded, total ->
+                            if (total > 0L) {
+                                val pct = ((downloaded * 95L) / total).toInt().coerceIn(5, 99)
+                                if (pct > lastPct) {
+                                    lastPct = pct
+                                    emitWavePrepProgress(videoId, pct, "downloading")
+                                }
+                            }
+                        }
+                    )
+                    out.flush()
+                }
+
+                if (tempFile.length() <= 0L) {
+                    if (tempFile.exists()) tempFile.delete()
+                    throw IOException("Downloaded wave audio file is empty")
+                }
+
+                if (targetFile.exists()) targetFile.delete()
+                if (!tempFile.renameTo(targetFile)) {
+                    tempFile.copyTo(targetFile, overwrite = true)
+                    tempFile.delete()
+                }
+
+                emitWavePrepProgress(videoId, 100, "cached")
+                call.resolve(
+                    JSObject().apply {
+                        put("localFilePath", targetFile.absolutePath)
+                        put("cached", false)
+                    }
+                )
+            } catch (ex: Exception) {
+                call.reject(ex.localizedMessage ?: "Failed to prepare Wave audio", ex)
+            }
+        }
+    }
+
+    private fun emitWavePrepProgress(videoId: String, progress: Int, stage: String) {
+        notifyListeners(
+            "wavePrepProgress",
+            JSObject().apply {
+                put("videoId", videoId)
+                put("progress", progress)
+                put("stage", stage)
+            }
+        )
+    }
+
+    @PluginMethod
     fun downloadTrack(call: PluginCall) {
         val videoId = XonePlaybackService.sanitizeVideoId(call.getString("videoId"))
         if (videoId.isEmpty()) {
@@ -1227,7 +1354,8 @@ class XoneAudioPlugin : Plugin() {
     private suspend fun downloadStreamChunked(
         videoId: String,
         initialStreamUrl: String,
-        onChunk: (ByteArray) -> Unit
+        onChunk: (ByteArray) -> Unit,
+        onProgress: ((downloadedBytes: Long, totalBytes: Long) -> Unit)? = null
     ): Long {
         var currentStreamUrl = initialStreamUrl
         var downloadedBytes = 0L
@@ -1294,6 +1422,7 @@ class XoneAudioPlugin : Plugin() {
                     onChunk(chunkBytes)
                     downloadedBytes += chunkBytes.size.toLong()
                     chunkWritten = true
+                    onProgress?.invoke(downloadedBytes, totalBytes)
 
                     if (responseCode == 200 && totalBytes <= 0L) {
                         totalBytes = downloadedBytes

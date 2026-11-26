@@ -21,7 +21,7 @@ interface SyncedLyricsViewProps {
 
 const SyncedLyricsView: React.FC<SyncedLyricsViewProps> = React.memo(
   ({ trackKey, lines }) => {
-    const currentTime = usePlayerStore((s) => s.currentTime);
+    const currentTime = usePlayerStore((s) => (s.waveTrack ? 0 : s.currentTime));
     const seekTo = usePlayerStore((s) => s.seekTo);
 
     const containerRef = useRef<HTMLDivElement | null>(null);
@@ -49,6 +49,7 @@ const SyncedLyricsView: React.FC<SyncedLyricsViewProps> = React.memo(
 
     useEffect(() => {
       if (activeIndex < 0) return;
+      if (usePlayerStore.getState().waveTrack) return;
       if (Date.now() < manualPauseUntilRef.current) return;
       activeLineRef.current?.scrollIntoView({
         behavior: "smooth",
